@@ -81,10 +81,15 @@ def parse_page(driver, page_num):
                 pass
             price_raw = ""
             try:
-                price_elem = item.find_element(By.CSS_SELECTOR, '.product-price, .catalog-card__price, [class*="price"]')
+                price_elem = item.find_element(By.CSS_SELECTOR, '.product-price, .catalog-card__price, [class*="price"], .price')
                 price_raw = price_elem.text.strip().split('\n')[0]
             except:
-                pass
+                # пробуем альтернативный селектор
+                try:
+                    price_elem = item.find_element(By.CSS_SELECTOR, '[class*="price"]')
+                    price_raw = price_elem.text.strip().split('\n')[0]
+                except:
+                    pass
             price_num = clean_price(price_raw)
             link = ""
             try:
@@ -195,6 +200,7 @@ MAIN_TEMPLATE = r"""
         body.light-theme .owner-sign { background: rgba(0,0,0,0.7); color: #ffd966; }
         body.light-theme .stats-card { background: #fff; border: 1px solid #dee2e6; }
         body.light-theme .stats-grid { color: #333; }
+        body.light-theme .log-message { border-bottom: 1px solid #e9ecef; }
 
         .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: background 0.3s; position: relative; }
         h1 { color: #ffd966; text-align: center; margin-top: 0; }
@@ -294,7 +300,28 @@ MAIN_TEMPLATE = r"""
         .status.info { background: #0c5460; color: #d1ecf1; }
         .status.success { background: #155724; color: #d4edda; }
         .status.error { background: #721c24; color: #f8d7da; }
-        .log { background: #1e1f2c; color: #0f0; font-family: monospace; padding: 10px; height: 250px; overflow-y: auto; margin-top: 20px; border-radius: 8px; font-size: 12px; }
+        /* Улучшенный лог */
+        .log {
+            background: #1e1f2c;
+            color: #0f0;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            padding: 12px;
+            height: 280px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border-radius: 12px;
+            font-size: 13px;
+            box-shadow: inset 0 0 8px rgba(0,0,0,0.3);
+            scroll-behavior: smooth;
+        }
+        .log-message {
+            border-bottom: 1px solid #2a2a3a;
+            padding: 6px 8px;
+            transition: background 0.1s;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-message:hover { background: #2a2a3a; }
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #3c3f54; padding-bottom: 10px; }
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
@@ -361,7 +388,7 @@ MAIN_TEMPLATE = r"""
         .toast.fade-out {
             animation: fadeOut 0.3s ease forwards;
         }
-        /* Модальное окно */
+        /* Модальное окно настроек (компактное) */
         .modal {
             display: none;
             position: fixed;
@@ -376,13 +403,13 @@ MAIN_TEMPLATE = r"""
         }
         .modal-content {
             background-color: #2d2f3e;
-            margin: 10% auto;
-            padding: 20px;
-            border-radius: 16px;
-            width: 80%;
-            max-width: 500px;
+            margin: 8% auto;
+            padding: 25px 30px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 450px;
             color: white;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
             animation: fadeIn 0.3s;
         }
         body.light-theme .modal-content { background-color: #fff; color: #222; }
@@ -392,11 +419,56 @@ MAIN_TEMPLATE = r"""
             font-size: 28px;
             font-weight: bold;
             cursor: pointer;
+            margin-top: -10px;
         }
         .close:hover { color: white; }
-        .settings-group { margin-bottom: 15px; }
-        .settings-group label { display: block; margin-bottom: 5px; }
-        .theme-switch { display: flex; gap: 15px; align-items: center; }
+        .settings-group {
+            margin-bottom: 20px;
+        }
+        .settings-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .settings-group input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #3c3f54;
+        }
+        .support-block {
+            background: #252634;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .support-block h4 {
+            margin: 0 0 10px 0;
+            color: #ffd966;
+        }
+        .support-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .support-links a {
+            color: #66bb6a;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .support-links a:hover { text-decoration: underline; }
+        .theme-switch {
+            display: flex;
+            gap: 15px;
+            margin-top: 5px;
+        }
+        .theme-switch button {
+            flex: 1;
+            background: #3c3f54;
+        }
     </style>
 </head>
 <body>
@@ -431,7 +503,6 @@ MAIN_TEMPLATE = r"""
                 <button id="stopBtn" disabled>⏹️ СТОП</button>
                 <button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button>
                 <button id="aboutBtn" class="info-btn">ℹ️ О программе</button>
-                <button id="supportBtn" class="info-btn">🛠️ Техподдержка</button>
                 <button id="siteBtn" class="info-btn">🌐 Официальный сайт</button>
             </div>
         </div>
@@ -455,13 +526,11 @@ MAIN_TEMPLATE = r"""
         <div class="table-wrapper">
             <table id="resultsTable">
                 <thead>
-                    <tr>
-                        <th data-sort="number">№</th>
-                        <th data-sort="string">Название</th>
-                        <th data-sort="string">Автор</th>
-                        <th data-sort="number">Цена</th>
-                        <th data-sort="string">Ссылка</th>
-                    </tr>
+                    <th data-sort="number">№</th>
+                    <th data-sort="string">Название</th>
+                    <th data-sort="string">Автор</th>
+                    <th data-sort="number">Цена</th>
+                    <th data-sort="string">Ссылка</th>
                 </thead>
                 <tbody id="tableBody"></tbody>
             </table>
@@ -471,17 +540,15 @@ MAIN_TEMPLATE = r"""
         </div>
     </div>
 
-    <!-- Вкладка Статистика (красивые карточки) -->
+    <!-- Вкладка Статистика -->
     <div id="statsTab" class="tab-content">
-        <div id="statsContainer">
-            <div class="stats-grid">
-                <div class="stats-card"><div class="label">📚 Всего книг</div><div class="value" id="statCount">0</div></div>
-                <div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value" id="statAvg">0 ₽</div></div>
-                <div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value" id="statMin">0 ₽</div></div>
-                <div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value" id="statMax">0 ₽</div></div>
-                <div class="stats-card"><div class="label">🎭 Жанр</div><div class="value" id="statGenre">—</div></div>
-                <div class="stats-card"><div class="label">⏱️ Время</div><div class="value" id="statTime">0 сек</div></div>
-            </div>
+        <div class="stats-grid">
+            <div class="stats-card"><div class="label">📚 Всего книг</div><div class="value" id="statCount">0</div></div>
+            <div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value" id="statAvg">0 ₽</div></div>
+            <div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value" id="statMin">0 ₽</div></div>
+            <div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value" id="statMax">0 ₽</div></div>
+            <div class="stats-card"><div class="label">🎭 Жанр</div><div class="value" id="statGenre">—</div></div>
+            <div class="stats-card"><div class="label">⏱️ Время</div><div class="value" id="statTime">0 сек</div></div>
         </div>
     </div>
 </div>
@@ -493,25 +560,13 @@ MAIN_TEMPLATE = r"""
         <h2>📖 О программе</h2>
         <p><strong>Версия:</strong> 4.0 (веб-версия)</p>
         <p><strong>Автор:</strong> Тимергалин Данил</p>
-        <p><strong>Описание:</strong> Программа собирает данные о книгах с сайта book24.ru. Выберите жанр и количество книг, нажмите "Старт" — данные появятся на вкладке "Результаты". Можно сохранить результат в CSV.</p>
-        <p><strong>Технологии:</strong> Python, Flask, Selenium, Chrome, HTML/CSS/JS.</p>
-        <p><strong>Цель:</strong> Учебный проект для демонстрации возможностей веб-парсинга.</p>
+        <p><strong>Описание:</strong> Программа собирает данные о книгах с сайта book24.ru.</p>
+        <p><strong>Технологии:</strong> Python, Flask, Selenium, Chrome.</p>
+        <p><strong>Цель:</strong> Учебный проект.</p>
     </div>
 </div>
 
-<!-- Модальное окно "Техподдержка" -->
-<div id="supportModal" class="modal">
-    <div class="modal-content">
-        <span class="close" id="closeSupport">&times;</span>
-        <h2>🛠️ Техническая поддержка</h2>
-        <p>По вопросам работы программы обращайтесь:</p>
-        <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank" style="color:#4caf50">@timergalin</a></p>
-        <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank" style="color:#4caf50">github.com/timergalin</a></p>
-        <p><small>Обычно отвечаем в течение 24 часов.</small></p>
-    </div>
-</div>
-
-<!-- Модальное окно Настройки -->
+<!-- Модальное окно Настройки (включает техподдержку) -->
 <div id="settingsModal" class="modal">
     <div class="modal-content">
         <span class="close" id="closeSettings">&times;</span>
@@ -527,7 +582,13 @@ MAIN_TEMPLATE = r"""
                 <button id="themeDarkBtn" class="info-btn">Тёмная</button>
             </div>
         </div>
-        <button id="saveSettingsBtn" style="background:#4caf50;">Сохранить настройки</button>
+        <div class="support-block">
+            <h4>🛠️ Техническая поддержка</h4>
+            <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></p>
+            <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank">github.com/timergalin</a></p>
+            <p><small>Обращайтесь, поможем!</small></p>
+        </div>
+        <button id="saveSettingsBtn" style="background:#4caf50; width:100%; margin-top:15px;">Сохранить настройки</button>
     </div>
 </div>
 
@@ -542,14 +603,11 @@ MAIN_TEMPLATE = r"""
     const statusDiv = document.getElementById('statusDiv');
     const logDiv = document.getElementById('logDiv');
     const aboutBtn = document.getElementById('aboutBtn');
-    const supportBtn = document.getElementById('supportBtn');
     const siteBtn = document.getElementById('siteBtn');
     const settingsBtn = document.getElementById('settingsBtn');
     const aboutModal = document.getElementById('aboutModal');
-    const supportModal = document.getElementById('supportModal');
     const settingsModal = document.getElementById('settingsModal');
     const closeAbout = document.getElementById('closeAbout');
-    const closeSupport = document.getElementById('closeSupport');
     const closeSettings = document.getElementById('closeSettings');
     const tabParsingBtn = document.getElementById('tabParsingBtn');
     const tabResultsBtn = document.getElementById('tabResultsBtn');
@@ -563,7 +621,6 @@ MAIN_TEMPLATE = r"""
     const themeDarkBtn = document.getElementById('themeDarkBtn');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
-    // Элементы статистики
     const statCount = document.getElementById('statCount');
     const statAvg = document.getElementById('statAvg');
     const statMin = document.getElementById('statMin');
@@ -571,7 +628,6 @@ MAIN_TEMPLATE = r"""
     const statGenre = document.getElementById('statGenre');
     const statTime = document.getElementById('statTime');
 
-    // Плавный тост
     function showToast(message, isError = false) {
         let toast = document.createElement('div');
         toast.className = 'toast';
@@ -584,7 +640,14 @@ MAIN_TEMPLATE = r"""
         }, 2500);
     }
 
-    // Переключение вкладок
+    function addLog(msg) {
+        let p = document.createElement('div');
+        p.className = 'log-message';
+        p.textContent = msg;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
     function setActiveTab(tab) {
         tabParsingBtn.classList.remove('active');
         tabResultsBtn.classList.remove('active');
@@ -630,26 +693,15 @@ MAIN_TEMPLATE = r"""
         });
     }
 
-    // Модальные окна
     aboutBtn.onclick = () => { aboutModal.style.display = 'block'; };
-    supportBtn.onclick = () => { supportModal.style.display = 'block'; };
     siteBtn.onclick = () => { window.open('https://book24.ru', '_blank'); };
     settingsBtn.onclick = () => { settingsModal.style.display = 'block'; };
     closeAbout.onclick = () => { aboutModal.style.display = 'none'; };
-    closeSupport.onclick = () => { supportModal.style.display = 'none'; };
     closeSettings.onclick = () => { settingsModal.style.display = 'none'; };
     window.onclick = (event) => {
         if (event.target == aboutModal) aboutModal.style.display = 'none';
-        if (event.target == supportModal) supportModal.style.display = 'none';
         if (event.target == settingsModal) settingsModal.style.display = 'none';
     };
-
-    function addLog(msg) {
-        let p = document.createElement('div');
-        p.textContent = msg;
-        logDiv.appendChild(p);
-        logDiv.scrollTop = logDiv.scrollHeight;
-    }
 
     function updateTableDisplay(books) {
         const tbody = document.getElementById('tableBody');
@@ -673,7 +725,6 @@ MAIN_TEMPLATE = r"""
                 linkCell.innerText = '—';
             }
         });
-        // Сортировка по клику на заголовок
         const headers = document.querySelectorAll('#resultsTable th');
         headers.forEach(th => {
             th.onclick = () => {
@@ -738,16 +789,14 @@ MAIN_TEMPLATE = r"""
                     saveBtn.disabled = true;
                     exportCsvBtn.disabled = true;
                 }
-                if(data.stats) {
-                    if(document.getElementById('statsTab').classList.contains('active')) {
-                        let s = data.stats;
-                        statCount.innerText = s.count;
-                        statAvg.innerText = s.avg_price + ' ₽';
-                        statMin.innerText = s.min_price + ' ₽';
-                        statMax.innerText = s.max_price + ' ₽';
-                        statGenre.innerText = s.category;
-                        statTime.innerText = s.time + ' сек';
-                    }
+                if(data.stats && document.getElementById('statsTab').classList.contains('active')) {
+                    let s = data.stats;
+                    statCount.innerText = s.count;
+                    statAvg.innerText = s.avg_price + ' ₽';
+                    statMin.innerText = s.min_price + ' ₽';
+                    statMax.innerText = s.max_price + ' ₽';
+                    statGenre.innerText = s.category;
+                    statTime.innerText = s.time + ' сек';
                 }
                 addLog(data.message || 'Готово');
                 startBtn.classList.remove('animate-pulse');
@@ -792,7 +841,6 @@ MAIN_TEMPLATE = r"""
     saveBtn.onclick = () => { window.location.href = '/download-csv'; };
     exportCsvBtn.onclick = () => { window.location.href = '/download-csv'; };
 
-    // Настройки
     function loadSettings() {
         let defaultCount = localStorage.getItem('defaultBookCount');
         if (defaultCount !== null && defaultCount !== '') {
@@ -820,7 +868,7 @@ MAIN_TEMPLATE = r"""
                 localStorage.setItem('defaultBookCount', num);
                 bookCountInput.value = num;
             } else {
-                showToast('Введите корректное положительное число для значения по умолчанию', true);
+                showToast('Введите корректное положительное число', true);
                 return;
             }
         }
