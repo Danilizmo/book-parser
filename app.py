@@ -144,19 +144,6 @@ def run_parser_task(max_books, category_url):
             all_books.extend(books_on_page)
         shared_state['books'] = all_books.copy()
         shared_state['progress_current'] = len(all_books)
-        # Обновляем статистику в реальном времени (для отображения на вкладке)
-        prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)') is not None]
-        avg_price = sum(prices)/len(prices) if prices else 0
-        min_price = min(prices) if prices else 0
-        max_price_val = max(prices) if prices else 0
-        shared_state['stats'] = {
-            'count': len(all_books),
-            'avg_price': round(avg_price, 2),
-            'min_price': min_price,
-            'max_price': max_price_val,
-            'category': categories.get(category_url, category_url),
-            'time': round(time.time() - start_time, 1)
-        }
         if len(all_books) >= max_books:
             break
         page += 1
@@ -165,7 +152,6 @@ def run_parser_task(max_books, category_url):
     driver.quit()
     elapsed = time.time() - start_time
 
-    # Финальная статистика
     prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)') is not None]
     avg_price = sum(prices)/len(prices) if prices else 0
     min_price = min(prices) if prices else 0
@@ -185,7 +171,7 @@ def run_parser_task(max_books, category_url):
         shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
     shared_state['running'] = False
 
-# ---------- HTML-шаблон с вкладками и настройками ----------
+# ---------- HTML-шаблон с тремя вкладками, настройками и кнопкой сайта ----------
 MAIN_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
@@ -193,92 +179,157 @@ MAIN_TEMPLATE = r"""
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📚 Парсер книг book24.ru | Timergalin Danil</title>
-    <style id="theme-style">
-        /* Тёмная тема (по умолчанию) */
-        :root {
-            --bg-body: #1e1f2c;
-            --bg-container: #2d2f3e;
-            --bg-controls: #252634;
-            --text-color: #eee;
-            --accent: #ffd966;
-            --border-color: #3c3f54;
-            --button-primary: #4caf50;
-            --button-danger: #f44336;
-            --button-info: #9c27b0;
-            --button-save: #2196f3;
-            --log-bg: #1e1f2c;
-            --log-text: #0f0;
-            --table-header: #3c3f54;
-        }
-        body.light {
-            --bg-body: #f0f2f5;
-            --bg-container: #ffffff;
-            --bg-controls: #e9ecef;
-            --text-color: #212529;
-            --accent: #e67e22;
-            --border-color: #dee2e6;
-            --button-primary: #28a745;
-            --button-danger: #dc3545;
-            --button-info: #6f42c1;
-            --button-save: #007bff;
-            --log-bg: #f8f9fa;
-            --log-text: #000;
-            --table-header: #e9ecef;
-        }
+    <style>
         * { box-sizing: border-box; }
-        body { background: var(--bg-body); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: var(--text-color); transition: background 0.2s; }
-        .container { max-width: 1400px; margin: auto; background: var(--bg-container); border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { color: var(--accent); text-align: center; margin-top: 0; }
+        /* Основная тёмная тема (по умолчанию) */
+        body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; position: relative; transition: background 0.3s, color 0.3s; }
+        body.light-theme { background: #f0f2f5; color: #222; }
+        body.light-theme .container { background: #fff; color: #222; }
+        body.light-theme .controls, body.light-theme .stats, body.light-theme .quote, body.light-theme .log { background: #e9ecef; color: #222; }
+        body.light-theme .progress-bar { background: #ddd; }
+        body.light-theme th { background: #dee2e6; color: #000; }
+        body.light-theme td, body.light-theme th { border-color: #ccc; }
+        body.light-theme .status.info { background: #cce5ff; color: #004085; }
+        body.light-theme .status.success { background: #d4edda; color: #155724; }
+        body.light-theme .status.error { background: #f8d7da; color: #721c24; }
+        body.light-theme .log { background: #fff; color: #000; border: 1px solid #ccc; }
+        body.light-theme .owner-sign { background: rgba(0,0,0,0.7); color: #ffd966; }
+
+        .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: background 0.3s; }
+        h1 { color: #ffd966; text-align: center; margin-top: 0; }
         /* Анимации */
-        @keyframes pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0.7); } 70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(76,175,80,0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes bgFlash { 0% { background-color: var(--bg-container); } 50% { background-color: var(--border-color); } 100% { background-color: var(--bg-container); } }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0.7); }
+            70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(76,175,80,0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes bgFlash {
+            0% { background-color: #2d2f3e; }
+            50% { background-color: #3c4058; }
+            100% { background-color: #2d2f3e; }
+        }
+        body.light-theme .flash-bg { animation: bgFlashLight 0.3s ease; }
+        @keyframes bgFlashLight {
+            0% { background-color: #fff; }
+            50% { background-color: #e0e0e0; }
+            100% { background-color: #fff; }
+        }
         .animate-pulse { animation: pulse 1.2s infinite; }
         .stats, .progress-bar, .status, .log { animation: fadeIn 0.4s ease-out; }
         .flash-bg { animation: bgFlash 0.3s ease; }
-        .loader { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--text-color); border-radius: 50%; border-top-color: var(--button-primary); animation: spin 0.6s linear infinite; margin-left: 10px; vertical-align: middle; }
-        .owner-sign { position: fixed; bottom: 10px; right: 15px; background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 20px; font-size: 12px; color: var(--accent); font-family: monospace; backdrop-filter: blur(4px); z-index: 1000; pointer-events: none; font-weight: bold; }
-        .controls { display: flex; gap: 20px; flex-wrap: wrap; background: var(--bg-controls); padding: 15px; border-radius: 12px; margin-bottom: 20px; align-items: flex-end; }
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: #4caf50;
+            animation: spin 0.6s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .owner-sign {
+            position: fixed;
+            bottom: 10px;
+            right: 15px;
+            background: rgba(0,0,0,0.6);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #ffd966;
+            font-family: monospace;
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            pointer-events: none;
+            font-weight: bold;
+        }
+        .controls { display: flex; gap: 20px; flex-wrap: wrap; background: #252634; padding: 15px; border-radius: 12px; margin-bottom: 20px; align-items: flex-end; justify-content: space-between; }
+        .control-group { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
-        label { font-weight: bold; color: var(--accent); }
-        input, select { background: var(--border-color); border: none; padding: 8px 12px; border-radius: 8px; color: var(--text-color); }
-        button { background: var(--button-primary); border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; transition: all 0.2s ease; margin: 5px; }
+        label { font-weight: bold; color: #ffd966; }
+        body.light-theme label { color: #0056b3; }
+        input, select { background: #3c3f54; border: none; padding: 8px 12px; border-radius: 8px; color: white; }
+        body.light-theme input, body.light-theme select { background: #fff; color: #000; border: 1px solid #ccc; }
+        button {
+            background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px;
+            font-weight: bold; color: white; cursor: pointer; transition: all 0.2s ease; margin: 5px;
+        }
         button:hover { transform: scale(1.02) translateY(-1px); filter: brightness(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        #stopBtn { background: var(--button-danger); }
-        #saveBtn, #exportCsvBtn { background: var(--button-save); }
-        .info-btn { background: var(--button-info); }
-        .tab-btn { background: var(--border-color); color: var(--text-color); }
-        .tab-btn.active { background: var(--button-primary); box-shadow: 0 0 8px var(--button-primary); }
+        #stopBtn { background: #f44336; }
+        #saveBtn { background: #2196f3; }
+        .info-btn { background: #9c27b0; }
+        .settings-btn { background: #607d8b; border-radius: 50%; width: 42px; height: 42px; padding: 0; font-size: 20px; display: inline-flex; align-items: center; justify-content: center; }
+        .tab-btn { background: #3c3f54; }
+        .tab-btn.active { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
         button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        .progress-bar { width: 100%; background: var(--border-color); border-radius: 10px; margin: 15px 0; overflow: hidden; }
-        .progress-fill { width: 0%; height: 25px; background: linear-gradient(90deg, var(--button-primary), #8bc34a); text-align: center; line-height: 25px; color: white; font-weight: bold; font-size: 13px; transition: width 0.2s linear; }
-        .stats { background: var(--bg-controls); padding: 12px; border-radius: 10px; margin: 15px 0; border-left: 5px solid var(--accent); transition: 0.3s; }
+        .progress-bar { width: 100%; background: #3c3f54; border-radius: 10px; margin: 15px 0; overflow: hidden; }
+        .progress-fill { width: 0%; height: 25px; background: linear-gradient(90deg, #4caf50, #8bc34a); text-align: center; line-height: 25px; color: white; font-weight: bold; font-size: 13px; transition: width 0.2s linear; }
+        .stats { background: #252634; padding: 12px; border-radius: 10px; margin: 15px 0; border-left: 5px solid #ffd966; transition: 0.3s; }
         .status { padding: 10px; border-radius: 8px; text-align: center; margin: 15px 0; font-weight: bold; transition: 0.2s; }
         .status.info { background: #0c5460; color: #d1ecf1; }
         .status.success { background: #155724; color: #d4edda; }
         .status.error { background: #721c24; color: #f8d7da; }
-        .log { background: var(--log-bg); color: var(--log-text); font-family: monospace; padding: 10px; height: 250px; overflow-y: auto; margin-top: 20px; border-radius: 8px; font-size: 12px; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
-        .tab-btn { background: var(--border-color); border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .log { background: #1e1f2c; color: #0f0; font-family: monospace; padding: 10px; height: 250px; overflow-y: auto; margin-top: 20px; border-radius: 8px; font-size: 12px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #3c3f54; padding-bottom: 10px; }
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
-        .settings-icon { background: none; font-size: 24px; padding: 0 10px; margin-left: auto; cursor: pointer; background: transparent; box-shadow: none; }
-        .settings-icon:hover { transform: rotate(15deg); background: transparent; }
         .table-wrapper { overflow-x: auto; max-height: 500px; overflow-y: auto; }
-        table { width: 100%; border-collapse: collapse; background: var(--bg-container); }
-        th, td { border: 1px solid var(--border-color); padding: 10px; text-align: left; }
-        th { background: var(--table-header); cursor: pointer; color: var(--accent); position: sticky; top: 0; }
-        th:hover { filter: brightness(0.95); }
-        td a { color: var(--button-primary); text-decoration: none; }
-        .quote { text-align: center; font-style: italic; margin: 20px 0; padding: 10px; background: var(--bg-controls); border-radius: 8px; color: var(--accent); }
-        .modal { display: none; position: fixed; z-index: 1001; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.7); backdrop-filter: blur(5px); }
-        .modal-content { background: var(--bg-container); margin: 10% auto; padding: 20px; border-radius: 16px; width: 80%; max-width: 500px; color: var(--text-color); box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadeIn 0.3s; }
-        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
-        .close:hover { color: var(--text-color); }
+        table { width: 100%; border-collapse: collapse; background: #2d2f3e; }
+        th, td { border: 1px solid #3c3f54; padding: 10px; text-align: left; }
+        th { background: #3c3f54; cursor: pointer; color: #ffd966; position: sticky; top: 0; }
+        th:hover { background: #4a4d6b; }
+        td a { color: #66bb6a; text-decoration: none; }
+        .quote {
+            text-align: center;
+            font-style: italic;
+            margin: 20px 0;
+            padding: 10px;
+            background: #252634;
+            border-radius: 8px;
+            color: #ffd966;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background-color: #2d2f3e;
+            margin: 10% auto;
+            padding: 20px;
+            border-radius: 16px;
+            width: 80%;
+            max-width: 500px;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            animation: fadeIn 0.3s;
+        }
+        body.light-theme .modal-content { background-color: #fff; color: #222; }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover { color: white; }
         .settings-group { margin-bottom: 15px; }
         .settings-group label { display: block; margin-bottom: 5px; }
-        .settings-group input, .settings-group select { width: 100%; }
+        .theme-switch { display: flex; gap: 15px; align-items: center; }
     </style>
 </head>
 <body>
@@ -288,28 +339,34 @@ MAIN_TEMPLATE = r"""
     <div class="quote">✨ «Читайте больше, живите ярче!» ✨</div>
 
     <div class="controls">
-        <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" placeholder="Введите число" min="1" step="1"></div>
-        <div class="form-group"><label>🎭 Жанр:</label>
-        <select id="category">
-            <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
-            <option value="https://book24.ru/knigi-novinki/">Новинки</option>
-            <option value="https://book24.ru/knigi-skoro-v-prodazhe/">Скоро в продаже</option>
-            <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
-            <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
-            <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
-            <option value="https://book24.ru/knigi/romany/">Романы</option>
-            <option value="https://book24.ru/knigi/fantastika/">Фантастика</option>
-            <option value="https://book24.ru/knigi/psikhologiya/">Психология</option>
-            <option value="https://book24.ru/knigi/biznes-literatura/">Бизнес-литература</option>
-            <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
-            <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
-        </select></div>
+        <div class="control-group">
+            <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="" placeholder="введите число"></div>
+            <div class="form-group"><label>🎭 Жанр:</label>
+            <select id="category">
+                <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
+                <option value="https://book24.ru/knigi-novinki/">Новинки</option>
+                <option value="https://book24.ru/knigi-skoro-v-prodazhe/">Скоро в продаже</option>
+                <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
+                <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
+                <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
+                <option value="https://book24.ru/knigi/romany/">Романы</option>
+                <option value="https://book24.ru/knigi/fantastika/">Фантастика</option>
+                <option value="https://book24.ru/knigi/psikhologiya/">Психология</option>
+                <option value="https://book24.ru/knigi/biznes-literatura/">Бизнес-литература</option>
+                <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
+                <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
+            </select></div>
+            <div>
+                <button id="startBtn">▶ СТАРТ</button>
+                <button id="stopBtn" disabled>⏹️ СТОП</button>
+                <button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button>
+                <button id="aboutBtn" class="info-btn">ℹ️ О программе</button>
+                <button id="supportBtn" class="info-btn">🛠️ Техподдержка</button>
+                <button id="siteBtn" class="info-btn">🌐 Официальный сайт</button>
+            </div>
+        </div>
         <div>
-            <button id="startBtn">▶ СТАРТ</button>
-            <button id="stopBtn" disabled>⏹️ СТОП</button>
-            <button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button>
-            <button id="aboutBtn" class="info-btn">ℹ️ О программе</button>
-            <button id="supportBtn" class="info-btn">🛠️ Техподдержка</button>
+            <button id="settingsBtn" class="settings-btn" title="Настройки">⚙️</button>
         </div>
     </div>
 
@@ -317,13 +374,11 @@ MAIN_TEMPLATE = r"""
         <button id="tabParsingBtn" class="tab-btn active">📡 Парсинг</button>
         <button id="tabResultsBtn" class="tab-btn">📊 Результаты</button>
         <button id="tabStatsBtn" class="tab-btn">📈 Статистика</button>
-        <button id="settingsBtn" class="settings-icon" title="Настройки">⚙️</button>
     </div>
 
     <!-- Вкладка Парсинг -->
     <div id="parsingTab" class="tab-content active">
         <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
-        <div class="stats" id="statsDiv">📊 Статистика: пока нет данных</div>
         <div class="status info" id="statusDiv">Готов к работе</div>
         <div class="log" id="logDiv">📋 Лог парсинга:\n</div>
     </div>
@@ -343,7 +398,7 @@ MAIN_TEMPLATE = r"""
 
     <!-- Вкладка Статистика -->
     <div id="statsTab" class="tab-content">
-        <div class="stats" id="detailedStatsDiv">📊 Детальная статистика появится после парсинга</div>
+        <div class="stats" id="statsDiv">📊 Статистика: пока нет данных</div>
     </div>
 </div>
 
@@ -366,125 +421,66 @@ MAIN_TEMPLATE = r"""
         <span class="close" id="closeSupport">&times;</span>
         <h2>🛠️ Техническая поддержка</h2>
         <p>По вопросам работы программы обращайтесь:</p>
-        <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank" style="color:var(--button-primary)">@timergalin</a></p>
-        <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank" style="color:var(--button-primary)">github.com/timergalin</a></p>
+        <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank" style="color:#4caf50">@timergalin</a></p>
+        <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank" style="color:#4caf50">github.com/timergalin</a></p>
         <p><small>Обычно отвечаем в течение 24 часов.</small></p>
     </div>
 </div>
 
-<!-- Модальное окно настроек -->
+<!-- Модальное окно Настройки -->
 <div id="settingsModal" class="modal">
     <div class="modal-content">
         <span class="close" id="closeSettings">&times;</span>
         <h2>⚙️ Настройки</h2>
         <div class="settings-group">
-            <label>📖 Количество книг по умолчанию (0 или пусто — поле будет пустым):</label>
-            <input type="number" id="defaultBookCount" min="0" step="1" placeholder="Например, 300">
+            <label>📖 Количество книг по умолчанию:</label>
+            <input type="number" id="defaultBookCount" placeholder="например, 300" value="">
+            <small>Оставьте пустым, чтобы поле ввода было пустым при загрузке.</small>
         </div>
         <div class="settings-group">
             <label>🎨 Тема оформления:</label>
-            <select id="themeSelect">
-                <option value="dark">Тёмная (по умолчанию)</option>
-                <option value="light">Светлая</option>
-            </select>
+            <div class="theme-switch">
+                <button id="themeLightBtn" class="info-btn">Светлая</button>
+                <button id="themeDarkBtn" class="info-btn">Тёмная</button>
+            </div>
         </div>
-        <button id="saveSettingsBtn">Сохранить настройки</button>
+        <button id="saveSettingsBtn" style="background:#4caf50;">Сохранить настройки</button>
     </div>
 </div>
 
 <script>
-    // Элементы
+    let currentBooks = [];
+    let updateInterval = null;
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const saveBtn = document.getElementById('saveBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const progressFill = document.getElementById('progressFill');
     const statsDiv = document.getElementById('statsDiv');
-    const detailedStatsDiv = document.getElementById('detailedStatsDiv');
     const statusDiv = document.getElementById('statusDiv');
     const tableBody = document.getElementById('tableBody');
     const logDiv = document.getElementById('logDiv');
     const aboutBtn = document.getElementById('aboutBtn');
     const supportBtn = document.getElementById('supportBtn');
+    const siteBtn = document.getElementById('siteBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
     const aboutModal = document.getElementById('aboutModal');
     const supportModal = document.getElementById('supportModal');
     const settingsModal = document.getElementById('settingsModal');
     const closeAbout = document.getElementById('closeAbout');
     const closeSupport = document.getElementById('closeSupport');
     const closeSettings = document.getElementById('closeSettings');
-    const settingsBtn = document.getElementById('settingsBtn');
-    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    const defaultBookCountInput = document.getElementById('defaultBookCount');
-    const themeSelect = document.getElementById('themeSelect');
-    const bookCountInput = document.getElementById('bookCount');
-
-    // Вкладки
     const tabParsingBtn = document.getElementById('tabParsingBtn');
     const tabResultsBtn = document.getElementById('tabResultsBtn');
     const tabStatsBtn = document.getElementById('tabStatsBtn');
     const parsingTab = document.getElementById('parsingTab');
     const resultsTab = document.getElementById('resultsTab');
     const statsTab = document.getElementById('statsTab');
-
-    // Переменные
-    let currentBooks = [];
-    let updateInterval = null;
-    let currentStats = null;
-
-    // Загрузка настроек из localStorage
-    function loadSettings() {
-        const defaultCount = localStorage.getItem('defaultBookCount');
-        if (defaultCount !== null && defaultCount !== '0') {
-            defaultBookCountInput.value = defaultCount;
-            bookCountInput.value = defaultCount;
-        } else {
-            defaultBookCountInput.value = '';
-            bookCountInput.value = '';
-        }
-        const theme = localStorage.getItem('theme');
-        if (theme === 'light') {
-            themeSelect.value = 'light';
-            document.body.classList.add('light');
-        } else {
-            themeSelect.value = 'dark';
-            document.body.classList.remove('light');
-        }
-    }
-
-    function saveSettings() {
-        let defaultCount = defaultBookCountInput.value.trim();
-        if (defaultCount === '' || parseInt(defaultCount) === 0) {
-            localStorage.removeItem('defaultBookCount');
-            bookCountInput.value = '';
-        } else {
-            const num = parseInt(defaultCount);
-            localStorage.setItem('defaultBookCount', num);
-            bookCountInput.value = num;
-        }
-        const theme = themeSelect.value;
-        localStorage.setItem('theme', theme);
-        if (theme === 'light') {
-            document.body.classList.add('light');
-        } else {
-            document.body.classList.remove('light');
-        }
-        settingsModal.style.display = 'none';
-    }
-
-    // Открытие/закрытие модальных окон
-    settingsBtn.onclick = () => { settingsModal.style.display = 'block'; };
-    closeSettings.onclick = () => { settingsModal.style.display = 'none'; };
-    saveSettingsBtn.onclick = saveSettings;
-
-    aboutBtn.onclick = () => { aboutModal.style.display = 'block'; };
-    supportBtn.onclick = () => { supportModal.style.display = 'block'; };
-    closeAbout.onclick = () => { aboutModal.style.display = 'none'; };
-    closeSupport.onclick = () => { supportModal.style.display = 'none'; };
-    window.onclick = (event) => {
-        if (event.target == aboutModal) aboutModal.style.display = 'none';
-        if (event.target == supportModal) supportModal.style.display = 'none';
-        if (event.target == settingsModal) settingsModal.style.display = 'none';
-    };
+    const bookCountInput = document.getElementById('bookCount');
+    const defaultBookCountInput = document.getElementById('defaultBookCount');
+    const themeLightBtn = document.getElementById('themeLightBtn');
+    const themeDarkBtn = document.getElementById('themeDarkBtn');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
     // Переключение вкладок
     tabParsingBtn.onclick = () => {
@@ -496,9 +492,8 @@ MAIN_TEMPLATE = r"""
     };
     tabStatsBtn.onclick = () => {
         setActiveTab('stats');
-        updateDetailedStats(currentStats);
+        fetchStats();
     };
-
     function setActiveTab(tab) {
         tabParsingBtn.classList.remove('active');
         tabResultsBtn.classList.remove('active');
@@ -518,6 +513,31 @@ MAIN_TEMPLATE = r"""
         }
     }
 
+    function fetchStats() {
+        fetch('/status').then(res => res.json()).then(data => {
+            if (data.stats) {
+                let s = data.stats;
+                statsDiv.innerHTML = `📊 Статистика: ${s.count} книг | Средняя цена: ${s.avg_price} ₽ | Мин: ${s.min_price} ₽ | Макс: ${s.max_price} ₽ | Жанр: ${s.category} | Время: ${s.time} сек`;
+            } else {
+                statsDiv.innerHTML = '📊 Статистика: пока нет данных. Запустите парсинг.';
+            }
+        });
+    }
+
+    // Модальные окна
+    aboutBtn.onclick = () => { aboutModal.style.display = 'block'; };
+    supportBtn.onclick = () => { supportModal.style.display = 'block'; };
+    siteBtn.onclick = () => { window.open('https://book24.ru', '_blank'); };
+    settingsBtn.onclick = () => { settingsModal.style.display = 'block'; };
+    closeAbout.onclick = () => { aboutModal.style.display = 'none'; };
+    closeSupport.onclick = () => { supportModal.style.display = 'none'; };
+    closeSettings.onclick = () => { settingsModal.style.display = 'none'; };
+    window.onclick = (event) => {
+        if (event.target == aboutModal) aboutModal.style.display = 'none';
+        if (event.target == supportModal) supportModal.style.display = 'none';
+        if (event.target == settingsModal) settingsModal.style.display = 'none';
+    };
+
     function addLog(msg) {
         let p = document.createElement('div');
         p.textContent = msg;
@@ -532,7 +552,8 @@ MAIN_TEMPLATE = r"""
             row.insertCell(0).innerText = idx+1;
             row.insertCell(1).innerText = book['Название'] || '';
             row.insertCell(2).innerText = book['Автор'] || '';
-            row.insertCell(3).innerText = book['Цена (строка)'] || '';
+            let price = book['Цена (строка)'] || (book['Цена (число)'] ? book['Цена (число)'] + ' ₽' : '—');
+            row.insertCell(3).innerText = price;
             let link = book['Ссылка'] || '';
             let linkCell = row.insertCell(4);
             if(link) {
@@ -541,9 +562,11 @@ MAIN_TEMPLATE = r"""
                 a.target = '_blank';
                 a.innerText = 'Открыть';
                 linkCell.appendChild(a);
+            } else {
+                linkCell.innerText = '—';
             }
         });
-        // Сортировка по заголовкам
+        // Сортировка
         document.querySelectorAll('#resultsTable th').forEach(th => {
             th.onclick = () => {
                 let col = th.cellIndex;
@@ -563,33 +586,9 @@ MAIN_TEMPLATE = r"""
         });
     }
 
-    function updateDetailedStats(stats) {
-        if (!stats || stats.count === 0) {
-            detailedStatsDiv.innerHTML = '📊 Детальная статистика появится после парсинга.';
-            return;
-        }
-        detailedStatsDiv.innerHTML = `
-            <div class="stats" style="background: var(--bg-controls);">
-                <h3>📈 Подробная статистика</h3>
-                <p>📚 Всего книг: <strong>${stats.count}</strong></p>
-                <p>💰 Средняя цена: <strong>${stats.avg_price} ₽</strong></p>
-                <p>📉 Минимальная цена: <strong>${stats.min_price} ₽</strong></p>
-                <p>📈 Максимальная цена: <strong>${stats.max_price} ₽</strong></p>
-                <p>🎭 Жанр: <strong>${stats.category}</strong></p>
-                <p>⏱️ Время парсинга: <strong>${stats.time} сек</strong></p>
-            </div>
-        `;
-    }
-
-    function updateStats(stats) {
-        if(stats) {
-            let text = `📊 Статистика: ${stats.count} книг | Средняя цена: ${stats.avg_price} ₽ | Мин: ${stats.min_price} ₽ | Макс: ${stats.max_price} ₽ | Жанр: ${stats.category} | Время: ${stats.time} сек`;
-            statsDiv.innerHTML = text;
-            currentStats = stats;
-            // Если вкладка статистики активна, обновить её
-            if (statsTab.classList.contains('active')) {
-                updateDetailedStats(stats);
-            }
+    function updateStatsFromData(stats) {
+        if(stats && document.getElementById('statsTab').classList.contains('active')) {
+            statsDiv.innerHTML = `📊 Статистика: ${stats.count} книг | Средняя цена: ${stats.avg_price} ₽ | Мин: ${stats.min_price} ₽ | Макс: ${stats.max_price} ₽ | Жанр: ${stats.category} | Время: ${stats.time} сек`;
         }
     }
 
@@ -601,10 +600,10 @@ MAIN_TEMPLATE = r"""
                     progressFill.style.width = percent+'%';
                     progressFill.innerText = percent+'%';
                 }
-                if(data.stats) updateStats(data.stats);
+                if(data.stats) updateStatsFromData(data.stats);
                 if(data.books && data.books.length !== currentBooks.length){
                     currentBooks = data.books;
-                    if (resultsTab.classList.contains('active')) {
+                    if(document.getElementById('resultsTab').classList.contains('active')) {
                         updateTableDisplay(currentBooks);
                     }
                     document.querySelector('.table-wrapper').classList.add('flash-bg');
@@ -623,7 +622,9 @@ MAIN_TEMPLATE = r"""
                 stopBtn.disabled = true;
                 if(data.books && data.books.length > 0){
                     currentBooks = data.books;
-                    if (resultsTab.classList.contains('active')) updateTableDisplay(currentBooks);
+                    if(document.getElementById('resultsTab').classList.contains('active')) {
+                        updateTableDisplay(currentBooks);
+                    }
                     saveBtn.disabled = false;
                     exportCsvBtn.disabled = false;
                     statusDiv.innerHTML = data.message || 'Завершено';
@@ -634,7 +635,12 @@ MAIN_TEMPLATE = r"""
                     saveBtn.disabled = true;
                     exportCsvBtn.disabled = true;
                 }
-                if(data.stats) updateStats(data.stats);
+                if(data.stats) {
+                    updateStatsFromData(data.stats);
+                    if(document.getElementById('statsTab').classList.contains('active')) {
+                        statsDiv.innerHTML = `📊 Статистика: ${data.stats.count} книг | Средняя цена: ${data.stats.avg_price} ₽ | Мин: ${data.stats.min_price} ₽ | Макс: ${data.stats.max_price} ₽ | Жанр: ${data.stats.category} | Время: ${data.stats.time} сек`;
+                    }
+                }
                 addLog(data.message || 'Готово');
                 startBtn.classList.remove('animate-pulse');
             }
@@ -644,7 +650,7 @@ MAIN_TEMPLATE = r"""
     startBtn.onclick = () => {
         let maxBooks = parseInt(bookCountInput.value);
         if (isNaN(maxBooks) || maxBooks <= 0) {
-            addLog('❌ Ошибка: введите корректное количество книг (целое число больше 0)');
+            addLog('❌ Ошибка: введите корректное количество книг (целое число > 0)');
             return;
         }
         let categoryUrl = document.getElementById('category').value;
@@ -655,9 +661,7 @@ MAIN_TEMPLATE = r"""
                 progressFill.style.width = '0%';
                 progressFill.innerText = '0%';
                 currentBooks = [];
-                if (resultsTab.classList.contains('active')) updateTableDisplay([]);
-                statsDiv.innerHTML = '📊 Статистика: сбор данных...';
-                if (statsTab.classList.contains('active')) updateDetailedStats(null);
+                if(document.getElementById('resultsTab').classList.contains('active')) updateTableDisplay([]);
                 statusDiv.innerHTML = 'Запуск...';
                 statusDiv.className = 'status info';
                 if(updateInterval) clearInterval(updateInterval);
@@ -682,9 +686,54 @@ MAIN_TEMPLATE = r"""
         window.location.href = '/download-csv';
     };
 
-    // Инициализация
+    // Настройки: загрузка и сохранение
+    function loadSettings() {
+        let defaultCount = localStorage.getItem('defaultBookCount');
+        if (defaultCount !== null && defaultCount !== '') {
+            defaultBookCountInput.value = defaultCount;
+            bookCountInput.value = defaultCount;
+        } else {
+            defaultBookCountInput.value = '';
+            bookCountInput.value = '';
+        }
+        let theme = localStorage.getItem('theme');
+        if (theme === 'light') {
+            document.body.classList.add('light-theme');
+        } else {
+            document.body.classList.remove('light-theme');
+        }
+    }
+    function saveSettings() {
+        let defCount = defaultBookCountInput.value.trim();
+        if (defCount === '') {
+            localStorage.removeItem('defaultBookCount');
+            bookCountInput.value = '';
+        } else {
+            let num = parseInt(defCount);
+            if (!isNaN(num) && num > 0) {
+                localStorage.setItem('defaultBookCount', num);
+                bookCountInput.value = num;
+            } else {
+                alert('Введите корректное положительное число для значения по умолчанию');
+                return;
+            }
+        }
+        // Тема сохраняется отдельно через кнопки
+        localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
+        settingsModal.style.display = 'none';
+        alert('Настройки сохранены');
+    }
+    themeLightBtn.onclick = () => {
+        document.body.classList.add('light-theme');
+        localStorage.setItem('theme', 'light');
+    };
+    themeDarkBtn.onclick = () => {
+        document.body.classList.remove('light-theme');
+        localStorage.setItem('theme', 'dark');
+    };
+    saveSettingsBtn.onclick = saveSettings;
+
     loadSettings();
-    // Если поле ввода пустое, парсинг не запустится до ввода числа
 </script>
 </body>
 </html>
@@ -704,8 +753,6 @@ def start():
     category_url = data.get('category_url')
     if not category_url:
         return jsonify({'status': 'error', 'message': 'Не указана категория'})
-    if max_books <= 0:
-        return jsonify({'status': 'error', 'message': 'Количество книг должно быть больше 0'})
     thread = threading.Thread(target=run_parser_task, args=(max_books, category_url))
     thread.start()
     return jsonify({'status': 'started'})
