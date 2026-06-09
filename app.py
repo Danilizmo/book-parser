@@ -171,8 +171,8 @@ def run_parser_task(max_books, category_url):
         shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
     shared_state['running'] = False
 
-# ---------- HTML-шаблон с анимациями и подписью владельца ----------
-HTML_TEMPLATE = r"""
+# ---------- HTML-шаблон главной страницы ----------
+MAIN_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -184,21 +184,38 @@ HTML_TEMPLATE = r"""
         body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; position: relative; }
         .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         h1 { color: #ffd966; text-align: center; margin-top: 0; }
-        /* Анимация пульсации для кнопки Старт */
+        /* Анимации */
         @keyframes pulse {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0.7); }
             70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(76,175,80,0); }
             100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0); }
         }
-        .animate-pulse { animation: pulse 1.2s infinite; }
-        /* Анимация появления строк лога */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-5px); }
+            from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .log div { animation: fadeIn 0.3s ease-in-out; }
-        /* Анимация для прогресс-бара уже есть через transition */
-        /* Подпись владельца в правом нижнем углу */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes bgFlash {
+            0% { background-color: #2d2f3e; }
+            50% { background-color: #3c4058; }
+            100% { background-color: #2d2f3e; }
+        }
+        .animate-pulse { animation: pulse 1.2s infinite; }
+        .stats, .progress-bar, .status, .log { animation: fadeIn 0.4s ease-out; }
+        .flash-bg { animation: bgFlash 0.3s ease; }
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: #4caf50;
+            animation: spin 0.6s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
         .owner-sign {
             position: fixed;
             bottom: 10px;
@@ -218,10 +235,11 @@ HTML_TEMPLATE = r"""
         .form-group { display: flex; flex-direction: column; gap: 5px; }
         label { font-weight: bold; color: #ffd966; }
         input, select { background: #3c3f54; border: none; padding: 8px 12px; border-radius: 8px; color: white; }
-        button { background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; transition: all 0.2s ease; }
+        button { background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; transition: all 0.2s ease; margin: 5px; }
         button:hover { transform: translateY(-2px); filter: brightness(1.05); }
         #stopBtn { background: #f44336; }
         #saveBtn { background: #2196f3; }
+        .info-btn { background: #9c27b0; }
         button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .progress-bar { width: 100%; background: #3c3f54; border-radius: 10px; margin: 15px 0; overflow: hidden; }
         .progress-fill { width: 0%; height: 25px; background: linear-gradient(90deg, #4caf50, #8bc34a); text-align: center; line-height: 25px; color: white; font-weight: bold; font-size: 13px; transition: width 0.2s linear; }
@@ -231,19 +249,59 @@ HTML_TEMPLATE = r"""
         .status.success { background: #155724; color: #d4edda; }
         .status.error { background: #721c24; color: #f8d7da; }
         .log { background: #1e1f2c; color: #0f0; font-family: monospace; padding: 10px; height: 200px; overflow-y: auto; margin-top: 20px; border-radius: 8px; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #2d2f3e; }
+        .table-wrapper { overflow-x: auto; max-height: 400px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; background: #2d2f3e; }
         th, td { border: 1px solid #3c3f54; padding: 10px; text-align: left; }
-        th { background: #3c3f54; cursor: pointer; color: #ffd966; }
+        th { background: #3c3f54; cursor: pointer; color: #ffd966; position: sticky; top: 0; }
         th:hover { background: #4a4d6b; }
         td a { color: #66bb6a; text-decoration: none; }
-        .table-wrapper { overflow-x: auto; }
-        footer { text-align: center; margin-top: 20px; font-size: 12px; color: #aaa; }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background-color: #2d2f3e;
+            margin: 10% auto;
+            padding: 20px;
+            border-radius: 16px;
+            width: 80%;
+            max-width: 500px;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            animation: fadeIn 0.3s;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover { color: white; }
+        .quote {
+            text-align: center;
+            font-style: italic;
+            margin: 20px 0;
+            padding: 10px;
+            background: #252634;
+            border-radius: 8px;
+            color: #ffd966;
+        }
     </style>
 </head>
 <body>
 <div class="owner-sign">👨‍💻 Владелец: Timergalin Danil | Учебный проект</div>
 <div class="container">
     <h1>📚 Парсер книг book24.ru</h1>
+    <div class="quote">«Книги — это мосты между мирами» ✨</div>
     <div class="controls">
         <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="500" min="1" max="2000"></div>
         <div class="form-group"><label>🎭 Жанр:</label>
@@ -261,14 +319,46 @@ HTML_TEMPLATE = r"""
             <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
             <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
         </select></div>
-        <div><button id="startBtn">▶ СТАРТ</button><button id="stopBtn" disabled>⏹️ СТОП</button><button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button></div>
+        <div>
+            <button id="startBtn">▶ СТАРТ</button>
+            <button id="stopBtn" disabled>⏹️ СТОП</button>
+            <button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button>
+            <button id="resultsBtn" class="info-btn">📋 Открыть полную таблицу</button>
+            <button id="aboutBtn" class="info-btn">ℹ️ О программе</button>
+            <button id="supportBtn" class="info-btn">🛠️ Техподдержка</button>
+        </div>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
     <div class="stats" id="statsDiv">📊 Статистика: пока нет данных</div>
     <div class="status info" id="statusDiv">Готов к работе</div>
     <div class="table-wrapper"><table id="resultsTable"><thead><tr><th>№</th><th>Название</th><th>Автор</th><th>Цена</th><th>Ссылка</th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="log" id="logDiv">📋 Лог парсинга:\n</div>
-    <footer>🔧 Анимации и дизайн | Работает на Flask + Selenium</footer>
+</div>
+
+<!-- Модальное окно "О программе" -->
+<div id="aboutModal" class="modal">
+    <div class="modal-content">
+        <span class="close" id="closeAbout">&times;</span>
+        <h2>📖 О программе</h2>
+        <p><strong>Версия:</strong> 3.0 (веб-версия)</p>
+        <p><strong>Автор:</strong> Тимергалин Данил</p>
+        <p><strong>Описание:</strong> Программа собирает данные о книгах с сайта book24.ru. Выберите жанр и количество книг, нажмите "Старт" — данные появятся в таблице. Можно сохранить результат в CSV.</p>
+        <p><strong>Технологии:</strong> Python, Flask, Selenium, Chrome, HTML/CSS/JS.</p>
+        <p><strong>Цель:</strong> Учебный проект для демонстрации возможностей веб-парсинга.</p>
+    </div>
+</div>
+
+<!-- Модальное окно "Техподдержка" -->
+<div id="supportModal" class="modal">
+    <div class="modal-content">
+        <span class="close" id="closeSupport">&times;</span>
+        <h2>🛠️ Техническая поддержка</h2>
+        <p>По вопросам работы программы обращайтесь:</p>
+        <p>📧 Email: <a href="mailto:timergalin.d@example.com" style="color:#4caf50">timergalin.d@example.com</a></p>
+        <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank" style="color:#4caf50">@timergalin</a></p>
+        <p>💬 GitHub: <a href="https://github.com/timergalin" target="_blank" style="color:#4caf50">github.com/timergalin</a></p>
+        <p><small>Обычно отвечаем в течение 24 часов.</small></p>
+    </div>
 </div>
 
 <script>
@@ -277,11 +367,34 @@ HTML_TEMPLATE = r"""
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const saveBtn = document.getElementById('saveBtn');
+    const resultsBtn = document.getElementById('resultsBtn');
+    const aboutBtn = document.getElementById('aboutBtn');
+    const supportBtn = document.getElementById('supportBtn');
     const progressFill = document.getElementById('progressFill');
     const statsDiv = document.getElementById('statsDiv');
     const statusDiv = document.getElementById('statusDiv');
     const tableBody = document.getElementById('tableBody');
     const logDiv = document.getElementById('logDiv');
+
+    // Модальные окна
+    const aboutModal = document.getElementById('aboutModal');
+    const supportModal = document.getElementById('supportModal');
+    const closeAbout = document.getElementById('closeAbout');
+    const closeSupport = document.getElementById('closeSupport');
+
+    aboutBtn.onclick = () => { aboutModal.style.display = 'block'; };
+    supportBtn.onclick = () => { supportModal.style.display = 'block'; };
+    closeAbout.onclick = () => { aboutModal.style.display = 'none'; };
+    closeSupport.onclick = () => { supportModal.style.display = 'none'; };
+    window.onclick = (event) => {
+        if (event.target == aboutModal) aboutModal.style.display = 'none';
+        if (event.target == supportModal) supportModal.style.display = 'none';
+    };
+
+    // Открыть полную таблицу в новом окне
+    resultsBtn.onclick = () => {
+        window.open('/results', '_blank');
+    };
 
     function addLog(msg) {
         let p = document.createElement('div');
@@ -307,7 +420,6 @@ HTML_TEMPLATE = r"""
                 linkCell.appendChild(a);
             }
         });
-        // Сортировка по заголовкам
         document.querySelectorAll('th').forEach(th => {
             th.onclick = () => {
                 let col = th.cellIndex;
@@ -341,9 +453,11 @@ HTML_TEMPLATE = r"""
                 if(data.books && data.books.length !== currentBooks.length){
                     currentBooks = data.books;
                     updateTable(data.books);
+                    document.querySelector('.table-wrapper').classList.add('flash-bg');
+                    setTimeout(() => document.querySelector('.table-wrapper').classList.remove('flash-bg'), 300);
                 }
                 statusDiv.className = 'status info';
-                statusDiv.innerText = '⏳ Сбор данных...';
+                statusDiv.innerText = '⏳ Сбор данных... <span class="loader"></span>';
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
                 saveBtn.disabled = true;
@@ -406,10 +520,73 @@ HTML_TEMPLATE = r"""
 </html>
 """
 
-# ---------- Маршруты Flask ----------
+# ---------- Маршрут для отдельной страницы с полной таблицей ----------
+@app.route('/results')
+def results():
+    books = shared_state.get('books', [])
+    stats = shared_state.get('stats', {})
+    # Генерируем HTML для отдельной страницы
+    rows = ""
+    for idx, book in enumerate(books, 1):
+        rows += f"""
+        <tr>
+            <td>{idx}</td>
+            <td>{book.get('Название', '')}</td>
+            <td>{book.get('Автор', '')}</td>
+            <td>{book.get('Цена (строка)', '')}</td>
+            <td><a href="{book.get('Ссылка', '#')}" target="_blank">Открыть</a></td>
+        </tr>
+        """
+    stats_html = ""
+    if stats:
+        stats_html = f"""
+        <div style="background:#252634; padding:15px; border-radius:10px; margin:20px 0; border-left:5px solid #ffd966;">
+            📊 Статистика: {stats.get('count',0)} книг | Средняя цена: {stats.get('avg_price',0)} ₽ |
+            Мин: {stats.get('min_price',0)} ₽ | Макс: {stats.get('max_price',0)} ₽ | Жанр: {stats.get('category','')} | Время: {stats.get('time',0)} сек
+        </div>
+        """
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Полная таблица результатов - Парсер book24.ru</title>
+        <style>
+            body {{ background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 20px; color: #eee; }}
+            h1 {{ color: #ffd966; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: #2d2f3e; }}
+            th, td {{ border: 1px solid #3c3f54; padding: 10px; text-align: left; }}
+            th {{ background: #3c3f54; color: #ffd966; position: sticky; top: 0; }}
+            a {{ color: #66bb6a; }}
+            .container {{ max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; }}
+            button {{ background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; margin-top: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📊 Полная таблица собранных книг</h1>
+            {stats_html}
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr><th>№</th><th>Название</th><th>Автор</th><th>Цена</th><th>Ссылка</th></tr>
+                    </thead>
+                    <tbody>
+                        {rows if rows else "<tr><td colspan='5'>Нет данных. Запустите парсинг на главной странице.</td></tr>"}
+                    </tbody>
+                </table>
+            </div>
+            <button onclick="window.close()">Закрыть окно</button>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+# ---------- Маршруты API ----------
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(MAIN_TEMPLATE)
 
 @app.route('/start', methods=['POST'])
 def start():
@@ -458,7 +635,7 @@ def download_csv():
         download_name=f'books_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
     )
 
-# ---------- Точка входа для локального запуска ----------
+# ---------- Точка входа ----------
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port, debug=False)
