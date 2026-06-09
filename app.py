@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import csv
 import io
 import random
@@ -18,9 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 app = Flask(__name__)
 CORS(app)
 
-# --------------------------------------------------------------
-# Глобальное состояние парсинга
-# --------------------------------------------------------------
+# ---------- Глобальное состояние ----------
 shared_state = {
     'running': False,
     'books': [],
@@ -46,9 +45,7 @@ categories = {
     "https://book24.ru/knigi/uchebnaya-literatura/": "Учебники"
 }
 
-# --------------------------------------------------------------
-# Функции парсинга (адаптированы под Chrome)
-# --------------------------------------------------------------
+# ---------- Функции парсинга ----------
 def clean_price(price_str):
     if not price_str:
         return None
@@ -119,7 +116,6 @@ def run_parser_task(max_books, category_url):
     shared_state['message'] = ''
     shared_state['stats'] = None
 
-    # Настройка Chrome для сервера
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
@@ -156,7 +152,6 @@ def run_parser_task(max_books, category_url):
     driver.quit()
     elapsed = time.time() - start_time
 
-    # Статистика
     prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)') is not None]
     avg_price = sum(prices)/len(prices) if prices else 0
     min_price = min(prices) if prices else 0
@@ -176,20 +171,18 @@ def run_parser_task(max_books, category_url):
         shared_state['message'] = f"Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
     shared_state['running'] = False
 
-# --------------------------------------------------------------
-# HTML + CSS + JS (можно взять из предыдущего кода, он не менялся)
-# --------------------------------------------------------------
+# ---------- HTML-шаблон (встроенный для простоты) ----------
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📚 Парсер книг book24.ru (Веб-версия)</title>
+    <title>📚 Парсер книг book24.ru</title>
     <style>
         * { box-sizing: border-box; }
-        body { background: #1e1f2c; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; color: #eee; }
-        .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; padding: 20px; }
+        body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; }
+        .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; }
         h1 { color: #ffd966; text-align: center; margin-top: 0; }
         .controls { display: flex; gap: 20px; flex-wrap: wrap; background: #252634; padding: 15px; border-radius: 12px; margin-bottom: 20px; align-items: flex-end; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -219,9 +212,22 @@ HTML_TEMPLATE = r"""
 <div class="container">
     <h1>📚 Парсер книг book24.ru</h1>
     <div class="controls">
-        <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="10" min="1" max="2000"></div>
+        <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="500" min="1" max="2000"></div>
         <div class="form-group"><label>🎭 Жанр:</label>
-        <select id="category">... (все категории) ...</select></div>
+        <select id="category">
+            <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
+            <option value="https://book24.ru/knigi-novinki/">Новинки</option>
+            <option value="https://book24.ru/knigi-skoro-v-prodazhe/">Скоро в продаже</option>
+            <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
+            <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
+            <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
+            <option value="https://book24.ru/knigi/romany/">Романы</option>
+            <option value="https://book24.ru/knigi/fantastika/">Фантастика</option>
+            <option value="https://book24.ru/knigi/psikhologiya/">Психология</option>
+            <option value="https://book24.ru/knigi/biznes-literatura/">Бизнес-литература</option>
+            <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
+            <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
+        </select></div>
         <div><button id="startBtn">▶ СТАРТ</button><button id="stopBtn" disabled>⏹️ СТОП</button><button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button></div>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
@@ -230,13 +236,151 @@ HTML_TEMPLATE = r"""
     <div class="table-wrapper"><table id="resultsTable"><thead><tr><th>№</th><th>Название</th><th>Автор</th><th>Цена</th><th>Ссылка</th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="log" id="logDiv">📋 Лог парсинга:\n</div>
 </div>
-<script> ... (JS код такой же, как в предыдущей версии, но для краткости оставлю предыдущий рабочий JS) ... </script>
+<script>
+    let currentBooks = [];
+    let updateInterval = null;
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const progressFill = document.getElementById('progressFill');
+    const statsDiv = document.getElementById('statsDiv');
+    const statusDiv = document.getElementById('statusDiv');
+    const tableBody = document.getElementById('tableBody');
+    const logDiv = document.getElementById('logDiv');
+
+    function addLog(msg) { let p=document.createElement('div'); p.textContent=msg; logDiv.appendChild(p); logDiv.scrollTop=logDiv.scrollHeight; }
+    function updateTable(books) {
+        tableBody.innerHTML = '';
+        books.forEach((book,idx) => {
+            let row = tableBody.insertRow();
+            row.insertCell(0).innerText = idx+1;
+            row.insertCell(1).innerText = book['Название']||'';
+            row.insertCell(2).innerText = book['Автор']||'';
+            row.insertCell(3).innerText = book['Цена (строка)']||'';
+            let link = book['Ссылка']||'';
+            let linkCell = row.insertCell(4);
+            if(link) { let a=document.createElement('a'); a.href=link; a.target='_blank'; a.innerText='Открыть'; linkCell.appendChild(a); }
+        });
+        document.querySelectorAll('th').forEach(th => {
+            th.onclick = () => {
+                let col = th.cellIndex;
+                let rows = Array.from(tableBody.rows);
+                let isNum = col===0 || col===3;
+                rows.sort((a,b)=> {
+                    let aVal = a.cells[col].innerText;
+                    let bVal = b.cells[col].innerText;
+                    if(isNum) { aVal=parseFloat(aVal.replace(/[^\d.-]/g,''))||0; bVal=parseFloat(bVal.replace(/[^\d.-]/g,''))||0; }
+                    return aVal > bVal ? 1 : -1;
+                });
+                rows.forEach(row=>tableBody.appendChild(row));
+            };
+        });
+    }
+    function updateStats(stats) { if(stats) statsDiv.innerHTML = `📊 Статистика: ${stats.count} книг | Средняя цена: ${stats.avg_price} ₽ | Мин: ${stats.min_price} ₽ | Макс: ${stats.max_price} ₽ | Жанр: ${stats.category} | Время: ${stats.time} сек`; }
+    function checkStatus() {
+        fetch('/status').then(res=>res.json()).then(data=>{
+            if(data.running){
+                if(data.progress_current && data.progress_total){
+                    let percent = Math.round((data.progress_current/data.progress_total)*100);
+                    progressFill.style.width=percent+'%'; progressFill.innerText=percent+'%';
+                }
+                if(data.stats) updateStats(data.stats);
+                if(data.books && data.books.length !== currentBooks.length){
+                    currentBooks = data.books;
+                    updateTable(data.books);
+                }
+                statusDiv.className='status info'; statusDiv.innerText='Сбор данных...';
+                startBtn.disabled=true; stopBtn.disabled=false; saveBtn.disabled=true;
+            } else {
+                if(updateInterval) clearInterval(updateInterval); updateInterval=null;
+                startBtn.disabled=false; stopBtn.disabled=true;
+                if(data.books && data.books.length>0){
+                    currentBooks=data.books; updateTable(data.books); saveBtn.disabled=false;
+                    statusDiv.className='status success'; statusDiv.innerText=data.message||'Завершено';
+                } else {
+                    statusDiv.className='status error'; statusDiv.innerText=data.message||'Нет результатов';
+                }
+                if(data.stats) updateStats(data.stats);
+                addLog(data.message||'Готово');
+            }
+        });
+    }
+    startBtn.onclick = () => {
+        let maxBooks = parseInt(document.getElementById('bookCount').value);
+        let categoryUrl = document.getElementById('category').value;
+        fetch('/start', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({max_books:maxBooks, category_url:categoryUrl}) })
+        .then(res=>res.json()).then(data=>{
+            if(data.status==='started'){
+                addLog('🚀 Парсинг запущен...');
+                progressFill.style.width='0%'; progressFill.innerText='0%';
+                tableBody.innerHTML=''; currentBooks=[];
+                statsDiv.innerHTML='📊 Статистика: сбор данных...';
+                statusDiv.className='status info'; statusDiv.innerText='Запуск...';
+                if(updateInterval) clearInterval(updateInterval);
+                updateInterval = setInterval(checkStatus, 1000);
+            } else addLog('❌ Ошибка: '+data.message);
+        });
+    };
+    stopBtn.onclick = () => { fetch('/stop',{method:'POST'}).then(()=>{ addLog('⏸️ Остановка...'); stopBtn.disabled=true; }); };
+    saveBtn.onclick = () => { window.location.href = '/download-csv'; };
+</script>
 </body>
 </html>
 """
 
-# Остальной Flask код (маршруты) – без изменений
-# ...
+# ---------- Маршруты Flask ----------
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
 
+@app.route('/start', methods=['POST'])
+def start():
+    if shared_state['running']:
+        return jsonify({'status': 'error', 'message': 'Парсинг уже запущен'})
+    data = request.get_json()
+    max_books = data.get('max_books', 500)
+    category_url = data.get('category_url')
+    if not category_url:
+        return jsonify({'status': 'error', 'message': 'Не указана категория'})
+    thread = threading.Thread(target=run_parser_task, args=(max_books, category_url))
+    thread.start()
+    return jsonify({'status': 'started'})
+
+@app.route('/stop', methods=['POST'])
+def stop():
+    shared_state['stop_flag'] = True
+    return jsonify({'status': 'stopped'})
+
+@app.route('/status')
+def status():
+    return jsonify({
+        'running': shared_state['running'],
+        'books': shared_state['books'],
+        'progress_current': shared_state['progress_current'],
+        'progress_total': shared_state['progress_total'],
+        'stats': shared_state['stats'],
+        'message': shared_state['message']
+    })
+
+@app.route('/download-csv')
+def download_csv():
+    books = shared_state.get('books', [])
+    if not books:
+        return "Нет данных для сохранения", 404
+    output = io.StringIO()
+    fieldnames = ['Название', 'Автор', 'Цена (число)', 'Цена (строка)', 'Ссылка']
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=';')
+    writer.writeheader()
+    writer.writerows(books)
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8-sig')),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'books_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    )
+
+# ---------- Точка входа для локального запуска (не используется на Render) ----------
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=8000)
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
