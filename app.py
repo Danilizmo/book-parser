@@ -171,7 +171,7 @@ def run_parser_task(max_books, category_url):
         shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
     shared_state['running'] = False
 
-# ---------- HTML-шаблон с тремя вкладками, настройками и кнопкой сайта ----------
+# ---------- HTML-шаблон ----------
 MAIN_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
@@ -181,11 +181,10 @@ MAIN_TEMPLATE = r"""
     <title>📚 Парсер книг book24.ru | Timergalin Danil</title>
     <style>
         * { box-sizing: border-box; }
-        /* Основная тёмная тема (по умолчанию) */
         body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; position: relative; transition: background 0.3s, color 0.3s; }
         body.light-theme { background: #f0f2f5; color: #222; }
         body.light-theme .container { background: #fff; color: #222; }
-        body.light-theme .controls, body.light-theme .stats, body.light-theme .quote, body.light-theme .log { background: #e9ecef; color: #222; }
+        body.light-theme .controls, body.light-theme .stats-card, body.light-theme .quote, body.light-theme .log { background: #e9ecef; color: #222; }
         body.light-theme .progress-bar { background: #ddd; }
         body.light-theme th { background: #dee2e6; color: #000; }
         body.light-theme td, body.light-theme th { border-color: #ccc; }
@@ -194,9 +193,28 @@ MAIN_TEMPLATE = r"""
         body.light-theme .status.error { background: #f8d7da; color: #721c24; }
         body.light-theme .log { background: #fff; color: #000; border: 1px solid #ccc; }
         body.light-theme .owner-sign { background: rgba(0,0,0,0.7); color: #ffd966; }
+        body.light-theme .stats-card { background: #fff; border: 1px solid #dee2e6; }
+        body.light-theme .stats-grid { color: #333; }
 
-        .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: background 0.3s; }
+        .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: background 0.3s; position: relative; }
         h1 { color: #ffd966; text-align: center; margin-top: 0; }
+        /* Кнопка настроек в правом верхнем углу */
+        .settings-top {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+        .settings-top button {
+            background: #607d8b;
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            font-size: 20px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         /* Анимации */
         @keyframes pulse {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(76,175,80,0.7); }
@@ -215,14 +233,12 @@ MAIN_TEMPLATE = r"""
             50% { background-color: #3c4058; }
             100% { background-color: #2d2f3e; }
         }
-        body.light-theme .flash-bg { animation: bgFlashLight 0.3s ease; }
-        @keyframes bgFlashLight {
-            0% { background-color: #fff; }
-            50% { background-color: #e0e0e0; }
-            100% { background-color: #fff; }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
         .animate-pulse { animation: pulse 1.2s infinite; }
-        .stats, .progress-bar, .status, .log { animation: fadeIn 0.4s ease-out; }
+        .progress-bar, .status, .log { animation: fadeIn 0.4s ease-out; }
         .flash-bg { animation: bgFlash 0.3s ease; }
         .loader {
             display: inline-block;
@@ -265,13 +281,11 @@ MAIN_TEMPLATE = r"""
         #stopBtn { background: #f44336; }
         #saveBtn { background: #2196f3; }
         .info-btn { background: #9c27b0; }
-        .settings-btn { background: #607d8b; border-radius: 50%; width: 42px; height: 42px; padding: 0; font-size: 20px; display: inline-flex; align-items: center; justify-content: center; }
         .tab-btn { background: #3c3f54; }
         .tab-btn.active { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
         button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .progress-bar { width: 100%; background: #3c3f54; border-radius: 10px; margin: 15px 0; overflow: hidden; }
         .progress-fill { width: 0%; height: 25px; background: linear-gradient(90deg, #4caf50, #8bc34a); text-align: center; line-height: 25px; color: white; font-weight: bold; font-size: 13px; transition: width 0.2s linear; }
-        .stats { background: #252634; padding: 12px; border-radius: 10px; margin: 15px 0; border-left: 5px solid #ffd966; transition: 0.3s; }
         .status { padding: 10px; border-radius: 8px; text-align: center; margin: 15px 0; font-weight: bold; transition: 0.2s; }
         .status.info { background: #0c5460; color: #d1ecf1; }
         .status.success { background: #155724; color: #d4edda; }
@@ -283,7 +297,7 @@ MAIN_TEMPLATE = r"""
         .table-wrapper { overflow-x: auto; max-height: 500px; overflow-y: auto; }
         table { width: 100%; border-collapse: collapse; background: #2d2f3e; }
         th, td { border: 1px solid #3c3f54; padding: 10px; text-align: left; }
-        th { background: #3c3f54; cursor: pointer; color: #ffd966; position: sticky; top: 0; }
+        th { background: #3c3f54; cursor: pointer; color: #ffd966; position: sticky; top: 0; user-select: none; }
         th:hover { background: #4a4d6b; }
         td a { color: #66bb6a; text-decoration: none; }
         .quote {
@@ -295,6 +309,52 @@ MAIN_TEMPLATE = r"""
             border-radius: 8px;
             color: #ffd966;
         }
+        /* Стили для статистики в виде карточек */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stats-card {
+            background: #252634;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            transition: transform 0.2s;
+            border-left: 4px solid #ffd966;
+        }
+        .stats-card:hover { transform: translateY(-3px); }
+        .stats-card .value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffd966;
+            margin: 10px 0;
+        }
+        .stats-card .label {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #aaa;
+        }
+        body.light-theme .stats-card .label { color: #555; }
+        /* Тост уведомление */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4caf50;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-weight: bold;
+            z-index: 2000;
+            animation: slideInRight 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-size: 14px;
+        }
+        /* Модальное окно */
         .modal {
             display: none;
             position: fixed;
@@ -335,6 +395,9 @@ MAIN_TEMPLATE = r"""
 <body>
 <div class="owner-sign">👨‍💻 Владелец: Timergalin Danil | Учебный проект</div>
 <div class="container">
+    <div class="settings-top">
+        <button id="settingsBtn" class="settings-btn" title="Настройки">⚙️</button>
+    </div>
     <h1>📚 Парсер книг book24.ru</h1>
     <div class="quote">✨ «Читайте больше, живите ярче!» ✨</div>
 
@@ -365,9 +428,6 @@ MAIN_TEMPLATE = r"""
                 <button id="siteBtn" class="info-btn">🌐 Официальный сайт</button>
             </div>
         </div>
-        <div>
-            <button id="settingsBtn" class="settings-btn" title="Настройки">⚙️</button>
-        </div>
     </div>
 
     <div class="tabs">
@@ -387,7 +447,15 @@ MAIN_TEMPLATE = r"""
     <div id="resultsTab" class="tab-content">
         <div class="table-wrapper">
             <table id="resultsTable">
-                <thead><tr><th>№</th><th>Название</th><th>Автор</th><th>Цена</th><th>Ссылка</th></thead>
+                <thead>
+                    <tr>
+                        <th data-sort="number">№</th>
+                        <th data-sort="string">Название</th>
+                        <th data-sort="string">Автор</th>
+                        <th data-sort="number">Цена</th>
+                        <th data-sort="string">Ссылка</th>
+                    </tr>
+                </thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
@@ -396,9 +464,18 @@ MAIN_TEMPLATE = r"""
         </div>
     </div>
 
-    <!-- Вкладка Статистика -->
+    <!-- Вкладка Статистика (красивые карточки) -->
     <div id="statsTab" class="tab-content">
-        <div class="stats" id="statsDiv">📊 Статистика: пока нет данных</div>
+        <div id="statsContainer">
+            <div class="stats-grid">
+                <div class="stats-card"><div class="label">📚 Всего книг</div><div class="value" id="statCount">0</div></div>
+                <div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value" id="statAvg">0 ₽</div></div>
+                <div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value" id="statMin">0 ₽</div></div>
+                <div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value" id="statMax">0 ₽</div></div>
+                <div class="stats-card"><div class="label">🎭 Жанр</div><div class="value" id="statGenre">—</div></div>
+                <div class="stats-card"><div class="label">⏱️ Время</div><div class="value" id="statTime">0 сек</div></div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -434,8 +511,7 @@ MAIN_TEMPLATE = r"""
         <h2>⚙️ Настройки</h2>
         <div class="settings-group">
             <label>📖 Количество книг по умолчанию:</label>
-            <input type="number" id="defaultBookCount" placeholder="например, 300" value="">
-            <small>Оставьте пустым, чтобы поле ввода было пустым при загрузке.</small>
+            <input type="number" id="defaultBookCount" placeholder="например, 300">
         </div>
         <div class="settings-group">
             <label>🎨 Тема оформления:</label>
@@ -456,9 +532,7 @@ MAIN_TEMPLATE = r"""
     const saveBtn = document.getElementById('saveBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const progressFill = document.getElementById('progressFill');
-    const statsDiv = document.getElementById('statsDiv');
     const statusDiv = document.getElementById('statusDiv');
-    const tableBody = document.getElementById('tableBody');
     const logDiv = document.getElementById('logDiv');
     const aboutBtn = document.getElementById('aboutBtn');
     const supportBtn = document.getElementById('supportBtn');
@@ -482,18 +556,15 @@ MAIN_TEMPLATE = r"""
     const themeDarkBtn = document.getElementById('themeDarkBtn');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
+    // Элементы статистики
+    const statCount = document.getElementById('statCount');
+    const statAvg = document.getElementById('statAvg');
+    const statMin = document.getElementById('statMin');
+    const statMax = document.getElementById('statMax');
+    const statGenre = document.getElementById('statGenre');
+    const statTime = document.getElementById('statTime');
+
     // Переключение вкладок
-    tabParsingBtn.onclick = () => {
-        setActiveTab('parsing');
-    };
-    tabResultsBtn.onclick = () => {
-        setActiveTab('results');
-        updateTableDisplay(currentBooks);
-    };
-    tabStatsBtn.onclick = () => {
-        setActiveTab('stats');
-        fetchStats();
-    };
     function setActiveTab(tab) {
         tabParsingBtn.classList.remove('active');
         tabResultsBtn.classList.remove('active');
@@ -507,19 +578,34 @@ MAIN_TEMPLATE = r"""
         } else if (tab === 'results') {
             tabResultsBtn.classList.add('active');
             resultsTab.classList.add('active');
+            updateTableDisplay(currentBooks);
         } else if (tab === 'stats') {
             tabStatsBtn.classList.add('active');
             statsTab.classList.add('active');
+            fetchAndUpdateStats();
         }
     }
+    tabParsingBtn.onclick = () => setActiveTab('parsing');
+    tabResultsBtn.onclick = () => setActiveTab('results');
+    tabStatsBtn.onclick = () => setActiveTab('stats');
 
-    function fetchStats() {
+    function fetchAndUpdateStats() {
         fetch('/status').then(res => res.json()).then(data => {
             if (data.stats) {
                 let s = data.stats;
-                statsDiv.innerHTML = `📊 Статистика: ${s.count} книг | Средняя цена: ${s.avg_price} ₽ | Мин: ${s.min_price} ₽ | Макс: ${s.max_price} ₽ | Жанр: ${s.category} | Время: ${s.time} сек`;
+                statCount.innerText = s.count;
+                statAvg.innerText = s.avg_price + ' ₽';
+                statMin.innerText = s.min_price + ' ₽';
+                statMax.innerText = s.max_price + ' ₽';
+                statGenre.innerText = s.category;
+                statTime.innerText = s.time + ' сек';
             } else {
-                statsDiv.innerHTML = '📊 Статистика: пока нет данных. Запустите парсинг.';
+                statCount.innerText = '0';
+                statAvg.innerText = '0 ₽';
+                statMin.innerText = '0 ₽';
+                statMax.innerText = '0 ₽';
+                statGenre.innerText = '—';
+                statTime.innerText = '0 сек';
             }
         });
     }
@@ -538,6 +624,15 @@ MAIN_TEMPLATE = r"""
         if (event.target == settingsModal) settingsModal.style.display = 'none';
     };
 
+    function showToast(message, isError = false) {
+        let toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.style.background = isError ? '#f44336' : '#4caf50';
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.remove(); }, 2000);
+    }
+
     function addLog(msg) {
         let p = document.createElement('div');
         p.textContent = msg;
@@ -546,9 +641,10 @@ MAIN_TEMPLATE = r"""
     }
 
     function updateTableDisplay(books) {
-        tableBody.innerHTML = '';
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
         books.forEach((book, idx) => {
-            let row = tableBody.insertRow();
+            let row = tbody.insertRow();
             row.insertCell(0).innerText = idx+1;
             row.insertCell(1).innerText = book['Название'] || '';
             row.insertCell(2).innerText = book['Автор'] || '';
@@ -566,30 +662,27 @@ MAIN_TEMPLATE = r"""
                 linkCell.innerText = '—';
             }
         });
-        // Сортировка
-        document.querySelectorAll('#resultsTable th').forEach(th => {
+        // Сортировка по клику на заголовок (с поддержкой чисел)
+        const headers = document.querySelectorAll('#resultsTable th');
+        headers.forEach(th => {
             th.onclick = () => {
-                let col = th.cellIndex;
-                let rows = Array.from(tableBody.rows);
-                let isNum = col === 0 || col === 3;
-                rows.sort((a,b) => {
-                    let aVal = a.cells[col].innerText;
-                    let bVal = b.cells[col].innerText;
-                    if(isNum) {
-                        aVal = parseFloat(aVal.replace(/[^\d.-]/g,'')) || 0;
-                        bVal = parseFloat(bVal.replace(/[^\d.-]/g,'')) || 0;
+                const colIndex = th.cellIndex;
+                const isNumber = th.getAttribute('data-sort') === 'number';
+                const rows = Array.from(tbody.rows);
+                rows.sort((a, b) => {
+                    let aVal = a.cells[colIndex].innerText;
+                    let bVal = b.cells[colIndex].innerText;
+                    if (isNumber) {
+                        aVal = parseFloat(aVal.replace(/[^\d.-]/g, '')) || 0;
+                        bVal = parseFloat(bVal.replace(/[^\d.-]/g, '')) || 0;
                     }
-                    return aVal > bVal ? 1 : -1;
+                    if (aVal < bVal) return -1;
+                    if (aVal > bVal) return 1;
+                    return 0;
                 });
-                rows.forEach(row => tableBody.appendChild(row));
+                rows.forEach(row => tbody.appendChild(row));
             };
         });
-    }
-
-    function updateStatsFromData(stats) {
-        if(stats && document.getElementById('statsTab').classList.contains('active')) {
-            statsDiv.innerHTML = `📊 Статистика: ${stats.count} книг | Средняя цена: ${stats.avg_price} ₽ | Мин: ${stats.min_price} ₽ | Макс: ${stats.max_price} ₽ | Жанр: ${stats.category} | Время: ${stats.time} сек`;
-        }
     }
 
     function checkStatus() {
@@ -600,7 +693,6 @@ MAIN_TEMPLATE = r"""
                     progressFill.style.width = percent+'%';
                     progressFill.innerText = percent+'%';
                 }
-                if(data.stats) updateStatsFromData(data.stats);
                 if(data.books && data.books.length !== currentBooks.length){
                     currentBooks = data.books;
                     if(document.getElementById('resultsTab').classList.contains('active')) {
@@ -636,9 +728,15 @@ MAIN_TEMPLATE = r"""
                     exportCsvBtn.disabled = true;
                 }
                 if(data.stats) {
-                    updateStatsFromData(data.stats);
+                    // Обновить статистику, если вкладка активна
                     if(document.getElementById('statsTab').classList.contains('active')) {
-                        statsDiv.innerHTML = `📊 Статистика: ${data.stats.count} книг | Средняя цена: ${data.stats.avg_price} ₽ | Мин: ${data.stats.min_price} ₽ | Макс: ${data.stats.max_price} ₽ | Жанр: ${data.stats.category} | Время: ${data.stats.time} сек`;
+                        let s = data.stats;
+                        statCount.innerText = s.count;
+                        statAvg.innerText = s.avg_price + ' ₽';
+                        statMin.innerText = s.min_price + ' ₽';
+                        statMax.innerText = s.max_price + ' ₽';
+                        statGenre.innerText = s.category;
+                        statTime.innerText = s.time + ' сек';
                     }
                 }
                 addLog(data.message || 'Готово');
@@ -650,7 +748,7 @@ MAIN_TEMPLATE = r"""
     startBtn.onclick = () => {
         let maxBooks = parseInt(bookCountInput.value);
         if (isNaN(maxBooks) || maxBooks <= 0) {
-            addLog('❌ Ошибка: введите корректное количество книг (целое число > 0)');
+            showToast('❌ Введите корректное количество книг (целое число > 0)', true);
             return;
         }
         let categoryUrl = document.getElementById('category').value;
@@ -668,7 +766,7 @@ MAIN_TEMPLATE = r"""
                 updateInterval = setInterval(checkStatus, 1000);
                 startBtn.classList.add('animate-pulse');
             } else {
-                addLog('❌ Ошибка: '+data.message);
+                showToast('❌ Ошибка: '+data.message, true);
             }
         });
     };
@@ -679,14 +777,10 @@ MAIN_TEMPLATE = r"""
             startBtn.classList.remove('animate-pulse');
         });
     };
-    saveBtn.onclick = () => {
-        window.location.href = '/download-csv';
-    };
-    exportCsvBtn.onclick = () => {
-        window.location.href = '/download-csv';
-    };
+    saveBtn.onclick = () => { window.location.href = '/download-csv'; };
+    exportCsvBtn.onclick = () => { window.location.href = '/download-csv'; };
 
-    // Настройки: загрузка и сохранение
+    // Настройки
     function loadSettings() {
         let defaultCount = localStorage.getItem('defaultBookCount');
         if (defaultCount !== null && defaultCount !== '') {
@@ -714,14 +808,13 @@ MAIN_TEMPLATE = r"""
                 localStorage.setItem('defaultBookCount', num);
                 bookCountInput.value = num;
             } else {
-                alert('Введите корректное положительное число для значения по умолчанию');
+                showToast('Введите корректное положительное число для значения по умолчанию', true);
                 return;
             }
         }
-        // Тема сохраняется отдельно через кнопки
         localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
         settingsModal.style.display = 'none';
-        alert('Настройки сохранены');
+        showToast('✅ Настройки сохранены');
     }
     themeLightBtn.onclick = () => {
         document.body.classList.add('light-theme');
@@ -739,7 +832,7 @@ MAIN_TEMPLATE = r"""
 </html>
 """
 
-# ---------- Маршруты ----------
+# ---------- Маршруты Flask ----------
 @app.route('/')
 def index():
     return render_template_string(MAIN_TEMPLATE)
