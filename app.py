@@ -237,6 +237,10 @@ MAIN_TEMPLATE = r"""
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
         .animate-pulse { animation: pulse 1.2s infinite; }
         .progress-bar, .status, .log { animation: fadeIn 0.4s ease-out; }
         .flash-bg { animation: bgFlash 0.3s ease; }
@@ -350,9 +354,12 @@ MAIN_TEMPLATE = r"""
             border-radius: 40px;
             font-weight: bold;
             z-index: 2000;
-            animation: slideInRight 0.3s ease;
+            animation: slideInRight 0.3s ease forwards;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             font-size: 14px;
+        }
+        .toast.fade-out {
+            animation: fadeOut 0.3s ease forwards;
         }
         /* Модальное окно */
         .modal {
@@ -564,6 +571,19 @@ MAIN_TEMPLATE = r"""
     const statGenre = document.getElementById('statGenre');
     const statTime = document.getElementById('statTime');
 
+    // Плавный тост
+    function showToast(message, isError = false) {
+        let toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.style.background = isError ? '#f44336' : '#4caf50';
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => { toast.remove(); }, 300);
+        }, 2500);
+    }
+
     // Переключение вкладок
     function setActiveTab(tab) {
         tabParsingBtn.classList.remove('active');
@@ -624,15 +644,6 @@ MAIN_TEMPLATE = r"""
         if (event.target == settingsModal) settingsModal.style.display = 'none';
     };
 
-    function showToast(message, isError = false) {
-        let toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.style.background = isError ? '#f44336' : '#4caf50';
-        toast.innerText = message;
-        document.body.appendChild(toast);
-        setTimeout(() => { toast.remove(); }, 2000);
-    }
-
     function addLog(msg) {
         let p = document.createElement('div');
         p.textContent = msg;
@@ -662,7 +673,7 @@ MAIN_TEMPLATE = r"""
                 linkCell.innerText = '—';
             }
         });
-        // Сортировка по клику на заголовок (с поддержкой чисел)
+        // Сортировка по клику на заголовок
         const headers = document.querySelectorAll('#resultsTable th');
         headers.forEach(th => {
             th.onclick = () => {
@@ -728,7 +739,6 @@ MAIN_TEMPLATE = r"""
                     exportCsvBtn.disabled = true;
                 }
                 if(data.stats) {
-                    // Обновить статистику, если вкладка активна
                     if(document.getElementById('statsTab').classList.contains('active')) {
                         let s = data.stats;
                         statCount.innerText = s.count;
@@ -756,6 +766,7 @@ MAIN_TEMPLATE = r"""
         .then(res => res.json()).then(data => {
             if(data.status === 'started'){
                 addLog('🚀 Парсинг запущен...');
+                showToast('🚀 Парсинг запущен');
                 progressFill.style.width = '0%';
                 progressFill.innerText = '0%';
                 currentBooks = [];
@@ -773,6 +784,7 @@ MAIN_TEMPLATE = r"""
     stopBtn.onclick = () => {
         fetch('/stop', { method:'POST' }).then(() => {
             addLog('⏸️ Остановка...');
+            showToast('⏸️ Парсинг остановлен');
             stopBtn.disabled = true;
             startBtn.classList.remove('animate-pulse');
         });
