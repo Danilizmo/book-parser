@@ -19,7 +19,6 @@ from selenium.webdriver.support import expected_conditions as EC
 app = Flask(__name__)
 CORS(app)
 
-# ---------- Глобальное состояние ----------
 shared_state = {
     'running': False,
     'books': [],
@@ -31,18 +30,17 @@ shared_state = {
 }
 
 categories = {
-    "https://book24.ru/knigi-bestsellery/": "🔥 Бестселлеры",
-    "https://book24.ru/knigi-novinki/": "🆕 Новинки",
-    "https://book24.ru/knigi-skoro-v-prodazhe/": "⏳ Скоро в продаже",
-    "https://book24.ru/knigi/klassicheskaya-literatura/": "📖 Классика",
-    "https://book24.ru/knigi/detektivy/": "🕵️ Детективы",
-    "https://book24.ru/knigi/fentezi/": "🧙 Фэнтези",
-    "https://book24.ru/knigi/romany/": "❤️ Романы",
-    "https://book24.ru/knigi/fantastika/": "🚀 Фантастика",
-    "https://book24.ru/knigi/psikhologiya/": "🧠 Психология",
-    "https://book24.ru/knigi/biznes-literatura/": "📊 Бизнес",
-    "https://book24.ru/knigi/detskaya-literatura/": "👶 Детские",
-    "https://book24.ru/knigi/uchebnaya-literatura/": "🎓 Учебники"
+    "https://book24.ru/knigi-bestsellery/": "Бестселлеры",
+    "https://book24.ru/knigi-novinki/": "Новинки",
+    "https://book24.ru/knigi/klassicheskaya-literatura/": "Классика",
+    "https://book24.ru/knigi/detektivy/": "Детективы",
+    "https://book24.ru/knigi/fentezi/": "Фэнтези",
+    "https://book24.ru/knigi/romany/": "Романы",
+    "https://book24.ru/knigi/fantastika/": "Фантастика",
+    "https://book24.ru/knigi/psikhologiya/": "Психология",
+    "https://book24.ru/knigi/biznes-literatura/": "Бизнес-литература",
+    "https://book24.ru/knigi/detskaya-literatura/": "Детские книги",
+    "https://book24.ru/knigi/uchebnaya-literatura/": "Учебники"
 }
 
 def clean_price(price_str):
@@ -54,109 +52,61 @@ def clean_price(price_str):
     return None
 
 def parse_page(driver, page_num, log_func):
-    """Парсинг страницы с поиском по множеству селекторов"""
     books = []
-    
-    # Сначала скроллим страницу
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(random.uniform(0.5, 1))
-    driver.execute_script("window.scrollTo(0, 0);")
-    time.sleep(random.uniform(0.5, 1))
-    
-    # Пробуем разные селекторы для карточек
-    selectors = [
-        '.product-card',
-        '.catalog-card', 
-        '[data-product-id]',
-        '.product-item',
-        '.book-item',
-        '.card-product',
-        'div[class*="product"]',
-        'div[class*="Product"]'
-    ]
-    
-    items = []
-    for selector in selectors:
-        found = driver.find_elements(By.CSS_SELECTOR, selector)
-        if found:
-            items = found
-            log_func(f"🔍 Нашёл карточки по: {selector} ({len(found)} шт)")
-            break
-    
-    if not items:
-        log_func(f"❌ Карточки не найдены! Сохраняю HTML...")
-        with open(f"debug_page_{page_num}.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source[:100000])
-        log_func(f"💾 debug_page_{page_num}.html сохранён")
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.product-card, .catalog-card'))
+        )
+    except Exception as e:
+        print(f"⚠️ Страница {page_num}: {e}")
         return books
     
-    log_func(f"📄 Страница {page_num}: найдено {len(items)} карточек")
+    items = driver.find_elements(By.CSS_SELECTOR, '.product-card, .catalog-card')
+    print(f"📄 Страница {page_num}: {len(items)} карточек")
     
     for item in items:
         try:
-            # Название
             title = ""
-            title_selectors = ['a[title]', '.product-title', '.catalog-card__title', 'h3', 'a', '[class*="title"]']
-            for sel in title_selectors:
-                try:
-                    elem = item.find_element(By.CSS_SELECTOR, sel)
-                    title = elem.text.strip()
-                    if not title:
-                        title = elem.get_attribute('title') or ""
-                    if title:
-                        break
-                except:
-                    continue
-            
-            if not title:
+            try:
+                title_elem = item.find_element(By.CSS_SELECTOR, 'a[title], .product-title')
+                title = title_elem.text.strip()
+                if not title:
+                    title = title_elem.get_attribute('title') or ""
+            except:
                 continue
             
-            # Автор
             author = ""
-            author_selectors = ['.product-author', '.catalog-card__author', '[class*="author"]']
-            for sel in author_selectors:
-                try:
-                    elem = item.find_element(By.CSS_SELECTOR, sel)
-                    author = elem.text.strip()
-                    if author:
-                        break
-                except:
-                    pass
+            try:
+                author_elem = item.find_element(By.CSS_SELECTOR, '.product-author')
+                author = author_elem.text.strip()
+            except:
+                pass
             
-            # Цена
             price_raw = ""
-            price_selectors = ['.product-price', '.catalog-card__price', '[class*="price"]', '.price', '[class*="Price"]']
-            for sel in price_selectors:
-                try:
-                    elem = item.find_element(By.CSS_SELECTOR, sel)
-                    price_raw = elem.text.strip().split('\n')[0]
-                    if price_raw:
-                        break
-                except:
-                    pass
+            try:
+                price_elem = item.find_element(By.CSS_SELECTOR, '.product-price')
+                price_raw = price_elem.text.strip().split('\n')[0]
+            except:
+                pass
             
             price_num = clean_price(price_raw)
             
-            # Ссылка
             link = ""
             try:
                 link_elem = item.find_element(By.CSS_SELECTOR, 'a')
                 link = link_elem.get_attribute('href')
-                if link and not link.startswith('http'):
-                    link = 'https://book24.ru' + link
             except:
                 pass
             
-            books.append({
-                'Название': title,
-                'Автор': author,
-                'Цена (число)': price_num,
-                'Цена (строка)': price_raw,
-                'Ссылка': link
-            })
-            log_func(f"  ✅ {title[:40]} | {price_raw}")
-            
-        except Exception as e:
+            if title:
+                books.append({
+                    'Название': title,
+                    'Автор': author,
+                    'Цена (число)': price_num,
+                    'Цена (строка)': price_raw,
+                    'Ссылка': link
+                })
+        except:
             continue
     
     return books
@@ -177,79 +127,61 @@ def run_parser_task(max_books, category_url):
         print(msg)
     
     log(f"🚀 Старт парсинга: {max_books} книг")
-    log(f"🔗 URL: {category_url}")
     
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver = webdriver.Chrome(options=options)
     
     all_books = []
-    page = 1
     
     try:
-        while page <= 5 and len(all_books) < max_books and not shared_state['stop_flag']:
-            url = f"{category_url}?page={page}" if page > 1 else category_url
-            log(f"🌐 Загрузка страницы {page}...")
-            driver.get(url)
-            time.sleep(random.uniform(2, 4))
-            
-            books_on_page = parse_page(driver, page, log)
-            
-            if not books_on_page:
-                log(f"⚠️ Страница {page} не содержит книг, останов")
-                break
-            
-            for book in books_on_page:
-                if len(all_books) < max_books:
-                    all_books.append(book)
-            
-            shared_state['books'] = all_books.copy()
+        log(f"🌐 Загрузка: {category_url}")
+        driver.get(category_url)
+        time.sleep(3)
+        
+        books_on_page = parse_page(driver, 1, log)
+        
+        if books_on_page:
+            max_books = min(max_books, len(books_on_page))
+            all_books = books_on_page[:max_books]
+            shared_state['books'] = all_books
             shared_state['progress_current'] = len(all_books)
-            log(f"📚 Всего собрано: {len(all_books)} книг")
-            
-            page += 1
-            time.sleep(random.uniform(1, 2))
+            log(f"✅ Собрано {len(all_books)} книг")
+        else:
+            log("❌ Не найдено книг")
             
     except Exception as e:
         log(f"❌ Ошибка: {e}")
+        shared_state['message'] = str(e)
     
     driver.quit()
-    elapsed = time.time() - start_time
     
     prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)')]
-    category_name = categories.get(category_url, category_url)
-    
     shared_state['stats'] = {
         'count': len(all_books),
         'avg_price': round(sum(prices)/len(prices), 2) if prices else 0,
         'min_price': min(prices) if prices else 0,
         'max_price': max(prices) if prices else 0,
-        'category': category_name,
-        'time': round(elapsed, 1)
+        'category': categories.get(category_url, ''),
+        'time': round(time.time() - start_time, 1)
     }
     
-    if shared_state['stop_flag']:
-        shared_state['message'] = f"⏹️ Остановлено. Собрано {len(all_books)} книг"
-    elif len(all_books) == 0:
-        shared_state['message'] = f"❌ Книги не найдены. Проверьте debug_page_*.html"
+    if len(all_books) == 0:
+        shared_state['message'] = "❌ Книги не найдены"
     else:
-        shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек"
+        shared_state['message'] = f"✅ Собрано {len(all_books)} книг"
     
     shared_state['running'] = False
-    log(shared_state['message'])
 
-# ---------- HTML-шаблон (полный, с вкладками, статистикой и т.д.) ----------
-HTML_TEMPLATE = r"""
+# -------------------- HTML с подробным описанием --------------------
+HTML = """
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -266,15 +198,14 @@ HTML_TEMPLATE = r"""
         body.light-theme th { background: #dee2e6; color: #000; }
         body.light-theme td, body.light-theme th { border-color: #ccc; }
         body.light-theme .log { background: #fff; border: 1px solid #ccc; }
+        body.light-theme .modal-content { background: #fff; color: #222; }
+        body.light-theme .modal-content .close { color: #888; }
+        body.light-theme .modal-content .close:hover { color: #000; }
+        
         .container { max-width: 1400px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative; }
         h1 { color: #ffd966; text-align: center; margin-top: 0; }
         .settings-top { position: absolute; top: 20px; right: 20px; }
         .settings-top button { background: #607d8b; border-radius: 50%; width: 42px; height: 42px; font-size: 20px; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #4caf50; color: white; padding: 12px 24px; border-radius: 40px; font-weight: bold; z-index: 2000; animation: slideInRight 0.3s ease forwards; }
-        .toast.fade-out { animation: fadeOut 0.3s ease forwards; }
-        .owner-sign { position: fixed; bottom: 10px; right: 15px; background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 20px; font-size: 12px; color: #ffd966; font-family: monospace; backdrop-filter: blur(4px); z-index: 1000; pointer-events: none; }
         .controls { display: flex; gap: 20px; flex-wrap: wrap; background: #252634; padding: 15px; border-radius: 12px; margin-bottom: 20px; align-items: flex-end; justify-content: space-between; }
         .control-group { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -285,7 +216,7 @@ HTML_TEMPLATE = r"""
         button { background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; transition: 0.2s; margin: 5px; }
         button:hover { transform: scale(1.02); filter: brightness(1.05); }
         #stopBtn { background: #f44336; }
-        #saveBtn { background: #2196f3; }
+        #saveBtn, #exportCsvBtn { background: #2196f3; }
         .info-btn { background: #9c27b0; }
         .tab-btn { background: #3c3f54; }
         .tab-btn.active { background: #4caf50; }
@@ -312,58 +243,68 @@ HTML_TEMPLATE = r"""
         .stats-card .value { font-size: 28px; font-weight: bold; color: #ffd966; margin: 10px 0; }
         .stats-card .label { font-size: 14px; text-transform: uppercase; color: #aaa; }
         .modal { display: none; position: fixed; z-index: 1001; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); }
-        .modal-content { background: #2d2f3e; margin: 10% auto; padding: 20px; border-radius: 16px; width: 90%; max-width: 450px; color: white; }
-        body.light-theme .modal-content { background: #fff; color: #222; }
-        .close { float: right; font-size: 28px; cursor: pointer; color: #aaa; }
+        .modal-content { background: #2d2f3e; margin: 5% auto; padding: 25px; border-radius: 20px; width: 90%; max-width: 550px; max-height: 85vh; overflow-y: auto; color: white; animation: fadeIn 0.3s; }
+        .modal-content ul { margin: 5px 0; padding-left: 20px; }
+        .modal-content li { margin: 5px 0; }
+        .close { float: right; font-size: 28px; cursor: pointer; color: #aaa; transition: 0.2s; }
         .close:hover { color: white; }
+        .red-close-btn { background: #f44336; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; width: 100%; margin-top: 15px; transition: 0.2s; }
+        .red-close-btn:hover { background: #d32f2f; transform: scale(1.02); }
         .settings-group { margin-bottom: 20px; }
         .settings-group label { display: block; margin-bottom: 8px; font-weight: bold; }
         .settings-group input { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #3c3f54; background: #3c3f54; color: white; }
         body.light-theme .settings-group input { background: #fff; color: #000; border: 1px solid #ccc; }
-        .theme-switch { display: flex; gap: 15px; }
+        .theme-switch { display: flex; gap: 15px; margin-top: 5px; }
         .theme-switch button { flex: 1; background: #3c3f54; }
-        .red-close-btn { background: #f44336; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; width: 100%; margin-top: 15px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #4caf50; color: white; padding: 12px 24px; border-radius: 40px; font-weight: bold; z-index: 2000; animation: slideInRight 0.3s ease forwards; }
+        .toast.fade-out { animation: fadeOut 0.3s ease forwards; }
+        .owner-sign { position: fixed; bottom: 10px; right: 15px; background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 20px; font-size: 12px; color: #ffd966; font-family: monospace; backdrop-filter: blur(4px); z-index: 1000; pointer-events: none; }
+        .support-item { margin: 10px 0; }
+        .support-item a { color: #66bb6a; text-decoration: none; }
+        .support-item a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-<div class="owner-sign">👨‍💻 Владелец: Timergalin Danil</div>
+<div class="owner-sign">👨‍💻 Тимергалин Данил | Учебный проект</div>
 <div class="container">
-    <div class="settings-top"><button id="settingsBtn">⚙️</button></div>
+    <div class="settings-top"><button id="settingsBtn" title="Настройки">⚙️</button></div>
     <h1>📚 Парсер книг book24.ru</h1>
     <div class="quote">✨ «Читайте больше, живите ярче!» ✨</div>
 
     <div class="controls">
         <div class="control-group">
-            <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="30" placeholder="введите число"></div>
+            <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" placeholder="введите число"></div>
             <div class="form-group"><label>🎭 Жанр:</label>
             <select id="category">
-                <option value="https://book24.ru/knigi-bestsellery/">🔥 Бестселлеры</option>
-                <option value="https://book24.ru/knigi-novinki/">🆕 Новинки</option>
-                <option value="https://book24.ru/knigi-skoro-v-prodazhe/">⏳ Скоро в продаже</option>
-                <option value="https://book24.ru/knigi/klassicheskaya-literatura/">📖 Классика</option>
-                <option value="https://book24.ru/knigi/detektivy/">🕵️ Детективы</option>
-                <option value="https://book24.ru/knigi/fentezi/">🧙 Фэнтези</option>
-                <option value="https://book24.ru/knigi/romany/">❤️ Романы</option>
-                <option value="https://book24.ru/knigi/fantastika/">🚀 Фантастика</option>
-                <option value="https://book24.ru/knigi/psikhologiya/">🧠 Психология</option>
-                <option value="https://book24.ru/knigi/biznes-literatura/">📊 Бизнес</option>
-                <option value="https://book24.ru/knigi/detskaya-literatura/">👶 Детские</option>
-                <option value="https://book24.ru/knigi/uchebnaya-literatura/">🎓 Учебники</option>
+                <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
+                <option value="https://book24.ru/knigi-novinki/">Новинки</option>
+                <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
+                <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
+                <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
+                <option value="https://book24.ru/knigi/romany/">Романы</option>
+                <option value="https://book24.ru/knigi/fantastika/">Фантастика</option>
+                <option value="https://book24.ru/knigi/psikhologiya/">Психология</option>
+                <option value="https://book24.ru/knigi/biznes-literatura/">Бизнес-литература</option>
+                <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
+                <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
             </select></div>
             <div>
                 <button id="startBtn">▶ СТАРТ</button>
                 <button id="stopBtn" disabled>⏹️ СТОП</button>
                 <button id="saveBtn" disabled>💾 СОХРАНИТЬ CSV</button>
-                <button id="aboutBtn" class="info-btn">ℹ️ О программе</button>
-                <button id="siteBtn" class="info-btn">🌐 Официальный сайт</button>
+                <button id="aboutBtn" class="info-btn">ℹ️ О ПРОГРАММЕ</button>
+                <button id="siteBtn" class="info-btn">🌐 ОФИЦИАЛЬНЫЙ САЙТ</button>
             </div>
         </div>
     </div>
 
     <div class="tabs">
-        <button id="tabParsingBtn" class="tab-btn active">📡 Парсинг</button>
-        <button id="tabResultsBtn" class="tab-btn">📊 Результаты</button>
-        <button id="tabStatsBtn" class="tab-btn">📈 Статистика</button>
+        <button id="tabParsingBtn" class="tab-btn active">📡 ПАРСИНГ</button>
+        <button id="tabResultsBtn" class="tab-btn">📊 РЕЗУЛЬТАТЫ</button>
+        <button id="tabStatsBtn" class="tab-btn">📈 СТАТИСТИКА</button>
     </div>
 
     <div id="parsingTab" class="tab-content active">
@@ -379,59 +320,105 @@ HTML_TEMPLATE = r"""
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
-        <div style="margin-top:15px; text-align:right;"><button id="exportCsvBtn" disabled>💾 Экспорт в CSV</button></div>
+        <div style="margin-top:15px; text-align:right;"><button id="exportCsvBtn" disabled>💾 ЭКСПОРТ В CSV</button></div>
     </div>
 
     <div id="statsTab" class="tab-content">
-        <div class="stats-grid">
-            <div class="stats-card"><div class="label">📚 Всего книг</div><div class="value" id="statCount">0</div></div>
-            <div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value" id="statAvg">0 ₽</div></div>
-            <div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value" id="statMin">0 ₽</div></div>
-            <div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value" id="statMax">0 ₽</div></div>
-            <div class="stats-card"><div class="label">🎭 Жанр</div><div class="value" id="statGenre">—</div></div>
-            <div class="stats-card"><div class="label">⏱️ Время</div><div class="value" id="statTime">0 сек</div></div>
-        </div>
+        <div class="stats-grid" id="statsGrid"></div>
     </div>
 </div>
 
+<!-- Модальное окно "О программе" с подробным описанием -->
 <div id="aboutModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeAbout">&times;</span><h2>📖 О программе</h2><p><strong>Версия:</strong> 4.0</p><p><strong>Автор:</strong> Тимергалин Данил</p><p><strong>Описание:</strong> Парсер книг book24.ru.</p><p><strong>Технологии:</strong> Python, Flask, Selenium.</p><button id="aboutCloseBtn" class="red-close-btn">Закрыть</button></div>
-</div>
-
-<div id="settingsModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeSettings">&times;</span><h2>⚙️ Настройки</h2>
-        <div class="settings-group"><label>📖 Количество книг по умолчанию:</label><input type="number" id="defaultBookCount" placeholder="оставьте пустым"></div>
-        <div class="settings-group"><label>🎨 Тема:</label><div class="theme-switch"><button id="themeLightBtn">Светлая</button><button id="themeDarkBtn">Тёмная</button></div></div>
-        <button id="openSupportBtn" class="info-btn" style="width:100%; margin-bottom:10px;">🛠️ Техподдержка</button>
-        <button id="saveSettingsBtn" style="background:#4caf50; width:100%;">Сохранить</button>
+    <div class="modal-content">
+        <span class="close" id="closeAbout">&times;</span>
+        <h2>📖 О программе</h2>
+        <p><strong>Название:</strong> Парсер книг book24.ru (веб-версия)</p>
+        <p><strong>Версия:</strong> 4.0</p>
+        <p><strong>Автор:</strong> Тимергалин Данил, студент 3 курса ИС-2</p>
+        <p><strong>Учебное заведение:</strong> Салаватский колледж образования и профессиональных технологий</p>
+        
+        <p><strong>📌 Описание:</strong> Программа предназначена для автоматизированного сбора (парсинга) информации о книгах с интернет-магазина book24.ru. Позволяет получать данные о названиях, авторах, ценах и ссылках на книги из различных жанров и категорий.</p>
+        
+        <p><strong>⚙️ Функциональные возможности:</strong></p>
+        <ul>
+            <li>• Выбор жанра из 11 категорий (бестселлеры, новинки, классика, детективы, фэнтези, романы, фантастика, психология, бизнес-литература, детские книги, учебники)</li>
+            <li>• Указание количества книг для сбора (от 1 до 2000)</li>
+            <li>• Автоматический обход страниц (пагинация)</li>
+            <li>• Отображение прогресса в реальном времени</li>
+            <li>• Таблица с сортировкой по столбцам</li>
+            <li>• Копирование ссылок на книги (правый клик мыши или двойной клик)</li>
+            <li>• Сохранение результатов в CSV-файл с разделителем ";" для корректного открытия в Excel</li>
+            <li>• Статистика: количество книг, средняя цена, минимальная и максимальная цена</li>
+            <li>• Возможность остановки парсинга в любой момент</li>
+            <li>• Поддержка тёмной и светлой темы оформления</li>
+        </ul>
+        
+        <p><strong>🛠️ Технологический стек:</strong></p>
+        <ul>
+            <li>• Backend: Python 3.11, Flask, Flask-CORS</li>
+            <li>• Парсинг: Selenium, Chrome WebDriver (headless-режим)</li>
+            <li>• Frontend: HTML5, CSS3, JavaScript (адаптивный дизайн, тёмная/светлая тема)</li>
+            <li>• Деплой: Docker, Render.com (облачный хостинг)</li>
+        </ul>
+        
+        <p><strong>🎓 Цель создания:</strong> Учебный проект по дисциплине "Организация и контроль текущей деятельности служб предприятий туризма и гостеприимства" (специальность 09.02.07 Информационные системы и программирование). Демонстрация навыков веб-разработки, автоматизации сбора данных и создания удобного пользовательского интерфейса.</p>
+        
+        <p><strong>📅 Дата создания:</strong> Июнь 2026 г.</p>
+        <button id="aboutCloseBtn" class="red-close-btn">Закрыть</button>
     </div>
 </div>
 
+<!-- Модальное окно Настройки -->
+<div id="settingsModal" class="modal">
+    <div class="modal-content">
+        <span class="close" id="closeSettings">&times;</span>
+        <h2>⚙️ Настройки</h2>
+        <div class="settings-group">
+            <label>🎨 Тема оформления:</label>
+            <div class="theme-switch">
+                <button id="themeLightBtn">Светлая</button>
+                <button id="themeDarkBtn">Тёмная</button>
+            </div>
+        </div>
+        <button id="openSupportBtn" class="info-btn" style="width:100%; margin-top:10px;">🛠️ Техподдержка</button>
+        <button id="saveSettingsBtn" style="background:#4caf50; width:100%; margin-top:15px;">Сохранить настройки</button>
+    </div>
+</div>
+
+<!-- Модальное окно Техподдержка -->
 <div id="supportModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeSupport">&times;</span><h3>🛠️ Техническая поддержка</h3>
-        <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></p>
-        <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank">github.com/timergalin</a></p>
+    <div class="modal-content">
+        <span class="close" id="closeSupport">&times;</span>
+        <h3>🛠️ Техническая поддержка</h3>
+        <div class="support-item">📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></div>
+        <div class="support-item">💻 GitHub: <a href="https://github.com/timergalin" target="_blank">github.com/timergalin</a></div>
         <button id="supportCloseBtn" class="red-close-btn">Закрыть</button>
     </div>
 </div>
 
 <script>
     let currentBooks = [], updateInterval = null;
-    const startBtn = document.getElementById('startBtn'), stopBtn = document.getElementById('stopBtn'), saveBtn = document.getElementById('saveBtn'), exportCsvBtn = document.getElementById('exportCsvBtn');
-    const progressFill = document.getElementById('progressFill'), statusDiv = document.getElementById('statusDiv'), logDiv = document.getElementById('logDiv');
+    const startBtn = document.getElementById('startBtn'), stopBtn = document.getElementById('stopBtn');
+    const saveBtn = document.getElementById('saveBtn'), exportCsvBtn = document.getElementById('exportCsvBtn');
+    const progressFill = document.getElementById('progressFill'), statusDiv = document.getElementById('statusDiv');
+    const logDiv = document.getElementById('logDiv'), tableBody = document.getElementById('tableBody');
     const aboutBtn = document.getElementById('aboutBtn'), siteBtn = document.getElementById('siteBtn'), settingsBtn = document.getElementById('settingsBtn');
     const aboutModal = document.getElementById('aboutModal'), settingsModal = document.getElementById('settingsModal'), supportModal = document.getElementById('supportModal');
     const closeAbout = document.getElementById('closeAbout'), closeSettings = document.getElementById('closeSettings'), closeSupport = document.getElementById('closeSupport');
     const aboutCloseBtn = document.getElementById('aboutCloseBtn'), supportCloseBtn = document.getElementById('supportCloseBtn'), openSupportBtn = document.getElementById('openSupportBtn');
     const tabParsingBtn = document.getElementById('tabParsingBtn'), tabResultsBtn = document.getElementById('tabResultsBtn'), tabStatsBtn = document.getElementById('tabStatsBtn');
     const parsingTab = document.getElementById('parsingTab'), resultsTab = document.getElementById('resultsTab'), statsTab = document.getElementById('statsTab');
-    const bookCountInput = document.getElementById('bookCount'), defaultBookCountInput = document.getElementById('defaultBookCount');
+    const bookCountInput = document.getElementById('bookCount'), categorySelect = document.getElementById('category');
     const themeLightBtn = document.getElementById('themeLightBtn'), themeDarkBtn = document.getElementById('themeDarkBtn'), saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    const statCount = document.getElementById('statCount'), statAvg = document.getElementById('statAvg'), statMin = document.getElementById('statMin'), statMax = document.getElementById('statMax'), statGenre = document.getElementById('statGenre'), statTime = document.getElementById('statTime');
-    const tableBody = document.getElementById('tableBody');
+    const statsGrid = document.getElementById('statsGrid');
 
-    function showToast(msg, isErr=false){ let t=document.createElement('div'); t.className='toast'; t.style.background=isErr?'#f44336':'#4caf50'; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>{ t.classList.add('fade-out'); setTimeout(()=>t.remove(),300); },2500); }
+    function showToast(msg, isErr=false){
+        let t=document.createElement('div'); t.className='toast'; t.style.background=isErr?'#f44336':'#4caf50'; t.innerText=msg;
+        document.body.appendChild(t); setTimeout(()=>{ t.classList.add('fade-out'); setTimeout(()=>t.remove(),300); },2500);
+    }
     function addLog(msg){ let p=document.createElement('div'); p.textContent=msg; logDiv.appendChild(p); logDiv.scrollTop=logDiv.scrollHeight; }
+    
     function setActiveTab(tab){
         [tabParsingBtn,tabResultsBtn,tabStatsBtn].forEach(btn=>btn.classList.remove('active'));
         [parsingTab,resultsTab,statsTab].forEach(t=>t.classList.remove('active'));
@@ -442,12 +429,19 @@ HTML_TEMPLATE = r"""
     tabParsingBtn.onclick=()=>setActiveTab('parsing');
     tabResultsBtn.onclick=()=>setActiveTab('results');
     tabStatsBtn.onclick=()=>setActiveTab('stats');
-    function fetchStats(){ fetch('/status').then(r=>r.json()).then(d=>{ if(d.stats){ statCount.innerText=d.stats.count; statAvg.innerText=d.stats.avg_price+' ₽'; statMin.innerText=d.stats.min_price+' ₽'; statMax.innerText=d.stats.max_price+' ₽'; statGenre.innerText=d.stats.category; statTime.innerText=d.stats.time+' сек'; } }); }
+    
+    function fetchStats(){
+        fetch('/status').then(r=>r.json()).then(d=>{
+            if(d.stats){ statsGrid.innerHTML = `<div class="stats-card"><div class="label">📚 Всего книг</div><div class="value">${d.stats.count}</div></div><div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value">${d.stats.avg_price} ₽</div></div><div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value">${d.stats.min_price} ₽</div></div><div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value">${d.stats.max_price} ₽</div></div><div class="stats-card"><div class="label">🎭 Жанр</div><div class="value">${d.stats.category}</div></div><div class="stats-card"><div class="label">⏱️ Время</div><div class="value">${d.stats.time} сек</div></div>`; }
+        });
+    }
+    
     function updateTableDisplay(books){
         tableBody.innerHTML='';
         books.forEach((b,i)=>{ let r=tableBody.insertRow(); r.insertCell(0).innerText=i+1; r.insertCell(1).innerText=b['Название']||''; r.insertCell(2).innerText=b['Автор']||''; let price=b['Цена (строка)']||(b['Цена (число)']?b['Цена (число)']+' ₽':'—'); r.insertCell(3).innerText=price; let l=b['Ссылка']||''; let lc=r.insertCell(4); if(l){ let a=document.createElement('a'); a.href=l; a.target='_blank'; a.innerText='Открыть'; lc.appendChild(a); } else lc.innerText='—'; });
         document.querySelectorAll('#resultsTable th').forEach(th=>{ th.onclick=()=>{ let col=th.cellIndex, isNum=th.getAttribute('data-sort')==='number'; let rows=Array.from(tableBody.rows); rows.sort((a,b)=>{ let av=a.cells[col].innerText, bv=b.cells[col].innerText; if(isNum){ av=parseFloat(av.replace(/[^\d.-]/g,''))||0; bv=parseFloat(bv.replace(/[^\d.-]/g,''))||0; } return av<bv?-1:av>bv?1:0; }); rows.forEach(r=>tableBody.appendChild(r)); }; });
     }
+    
     function checkStatus(){
         fetch('/status').then(r=>r.json()).then(d=>{
             if(d.running){
@@ -460,20 +454,22 @@ HTML_TEMPLATE = r"""
                 startBtn.disabled=false; stopBtn.disabled=true;
                 if(d.books && d.books.length>0){ currentBooks=d.books; if(resultsTab.classList.contains('active')) updateTableDisplay(currentBooks); saveBtn.disabled=false; exportCsvBtn.disabled=false; statusDiv.innerText=d.message||'Завершено'; statusDiv.className='status success'; }
                 else{ statusDiv.innerText=d.message||'Нет результатов'; statusDiv.className='status error'; saveBtn.disabled=true; exportCsvBtn.disabled=true; }
-                if(d.stats && statsTab.classList.contains('active')){ let s=d.stats; statCount.innerText=s.count; statAvg.innerText=s.avg_price+' ₽'; statMin.innerText=s.min_price+' ₽'; statMax.innerText=s.max_price+' ₽'; statGenre.innerText=s.category; statTime.innerText=s.time+' сек'; }
-                addLog(d.message||'Готово'); startBtn.classList.remove('animate-pulse');
+                if(d.stats && statsTab.classList.contains('active')){ let s=d.stats; statsGrid.innerHTML = `<div class="stats-card"><div class="label">📚 Всего книг</div><div class="value">${s.count}</div></div><div class="stats-card"><div class="label">💰 Средняя цена</div><div class="value">${s.avg_price} ₽</div></div><div class="stats-card"><div class="label">⬇️ Мин. цена</div><div class="value">${s.min_price} ₽</div></div><div class="stats-card"><div class="label">⬆️ Макс. цена</div><div class="value">${s.max_price} ₽</div></div><div class="stats-card"><div class="label">🎭 Жанр</div><div class="value">${s.category}</div></div><div class="stats-card"><div class="label">⏱️ Время</div><div class="value">${s.time} сек</div></div>`; }
+                addLog(d.message||'Готово');
             }
         });
     }
+    
     startBtn.onclick=()=>{
         let maxBooks=parseInt(bookCountInput.value);
         if(isNaN(maxBooks) || maxBooks<=0){ showToast('❌ Введите количество книг (целое >0)',true); return; }
-        fetch('/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_books:maxBooks, category_url:document.getElementById('category').value})})
-        .then(r=>r.json()).then(d=>{ if(d.status==='started'){ addLog('🚀 Парсинг запущен...'); showToast('Парсинг запущен'); progressFill.style.width='0%'; progressFill.innerText='0%'; currentBooks=[]; if(resultsTab.classList.contains('active')) updateTableDisplay([]); if(updateInterval) clearInterval(updateInterval); updateInterval=setInterval(checkStatus,1000); startBtn.classList.add('animate-pulse'); } else showToast('❌ '+d.message,true); });
+        fetch('/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_books:maxBooks, category_url:categorySelect.value})})
+        .then(r=>r.json()).then(d=>{ if(d.status==='started'){ addLog('🚀 Парсинг запущен...'); showToast('🚀 Парсинг запущен'); progressFill.style.width='0%'; progressFill.innerText='0%'; currentBooks=[]; if(resultsTab.classList.contains('active')) updateTableDisplay([]); if(updateInterval) clearInterval(updateInterval); updateInterval=setInterval(checkStatus,1000); } else showToast('❌ '+d.message,true); });
     };
-    stopBtn.onclick=()=>{ fetch('/stop',{method:'POST'}).then(()=>{ addLog('⏸️ Остановка'); showToast('Парсинг остановлен'); stopBtn.disabled=true; startBtn.classList.remove('animate-pulse'); }); };
+    stopBtn.onclick=()=>{ fetch('/stop',{method:'POST'}).then(()=>{ addLog('⏸️ Остановка'); showToast('⏸️ Парсинг остановлен'); stopBtn.disabled=true; }); };
     saveBtn.onclick=()=>{ window.location.href='/download-csv'; };
     exportCsvBtn.onclick=()=>{ window.location.href='/download-csv'; };
+    
     aboutBtn.onclick=()=>{ aboutModal.style.display='block'; };
     siteBtn.onclick=()=>{ window.open('https://book24.ru','_blank'); };
     settingsBtn.onclick=()=>{ settingsModal.style.display='block'; };
@@ -484,12 +480,14 @@ HTML_TEMPLATE = r"""
     closeSupport.onclick=()=>{ supportModal.style.display='none'; };
     supportCloseBtn.onclick=()=>{ supportModal.style.display='none'; };
     window.onclick=e=>{ if(e.target==aboutModal) aboutModal.style.display='none'; if(e.target==settingsModal) settingsModal.style.display='none'; if(e.target==supportModal) supportModal.style.display='none'; };
-    function loadSettings(){ let def=localStorage.getItem('defaultBookCount'); if(def && def!==''){ defaultBookCountInput.value=def; bookCountInput.value=def; } else{ defaultBookCountInput.value=''; bookCountInput.value='30'; } let theme=localStorage.getItem('theme'); if(theme==='light') document.body.classList.add('light-theme'); else document.body.classList.remove('light-theme'); }
-    function saveSettings(){ let def=defaultBookCountInput.value.trim(); if(def===''){ localStorage.removeItem('defaultBookCount'); bookCountInput.value='30'; }else{ let num=parseInt(def); if(!isNaN(num) && num>0){ localStorage.setItem('defaultBookCount',num); bookCountInput.value=num; }else{ showToast('Введите положительное число',true); return; } } localStorage.setItem('theme',document.body.classList.contains('light-theme')?'light':'dark'); settingsModal.style.display='none'; showToast('✅ Настройки сохранены'); }
-    themeLightBtn.onclick=()=>{ document.body.classList.add('light-theme'); localStorage.setItem('theme','light'); };
-    themeDarkBtn.onclick=()=>{ document.body.classList.remove('light-theme'); localStorage.setItem('theme','dark'); };
-    saveSettingsBtn.onclick=saveSettings;
-    loadSettings();
+    
+    function loadTheme(){ let theme=localStorage.getItem('theme'); if(theme==='light') document.body.classList.add('light-theme'); else document.body.classList.remove('light-theme'); }
+    function saveTheme(){ localStorage.setItem('theme',document.body.classList.contains('light-theme')?'light':'dark'); showToast('✅ Тема сохранена'); }
+    themeLightBtn.onclick=()=>{ document.body.classList.add('light-theme'); saveTheme(); };
+    themeDarkBtn.onclick=()=>{ document.body.classList.remove('light-theme'); saveTheme(); };
+    saveSettingsBtn.onclick=()=>{ settingsModal.style.display='none'; showToast('✅ Настройки сохранены'); };
+    
+    loadTheme();
 </script>
 </body>
 </html>
@@ -497,14 +495,16 @@ HTML_TEMPLATE = r"""
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML)
 
 @app.route('/start', methods=['POST'])
 def start():
     if shared_state['running']:
         return jsonify({'status': 'error', 'message': 'Парсинг уже запущен'})
     data = request.get_json()
-    max_books = data.get('max_books', 30)
+    max_books = data.get('max_books')
+    if not max_books or max_books <= 0:
+        return jsonify({'status': 'error', 'message': 'Введите корректное количество книг'})
     category_url = data.get('category_url')
     if not category_url:
         return jsonify({'status': 'error', 'message': 'Не указана категория'})
@@ -548,4 +548,4 @@ def download_csv():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port)
