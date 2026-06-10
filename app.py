@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import csv
 import io
@@ -18,6 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 app = Flask(__name__)
 CORS(app)
 
+# ---------- Глобальное состояние ----------
 shared_state = {
     'running': False,
     'books': [],
@@ -29,79 +31,100 @@ shared_state = {
 }
 
 categories = {
-    "https://book24.ru/knigi-bestsellery/": "Бестселлеры",
-    "https://book24.ru/knigi-novinki/": "Новинки",
-    "https://book24.ru/knigi-skoro-v-prodazhe/": "Скоро в продаже",
-    "https://book24.ru/knigi/klassicheskaya-literatura/": "Классика",
-    "https://book24.ru/knigi/detektivy/": "Детективы",
-    "https://book24.ru/knigi/fentezi/": "Фэнтези",
-    "https://book24.ru/knigi/romany/": "Романы",
-    "https://book24.ru/knigi/fantastika/": "Фантастика",
-    "https://book24.ru/knigi/psikhologiya/": "Психология",
-    "https://book24.ru/knigi/biznes-literatura/": "Бизнес-литература",
-    "https://book24.ru/knigi/detskaya-literatura/": "Детские книги",
-    "https://book24.ru/knigi/uchebnaya-literatura/": "Учебники"
-    "https://book24.ru/knigi/detektivy/": "Детективы"
+    "https://book24.ru/knigi-bestsellery/": "🔥 Бестселлеры",
+    "https://book24.ru/knigi-novinki/": "🆕 Новинки",
+    "https://book24.ru/knigi-skoro-v-prodazhe/": "⏳ Скоро в продаже",
+    "https://book24.ru/knigi/klassicheskaya-literatura/": "📖 Классика",
+    "https://book24.ru/knigi/detektivy/": "🕵️ Детективы",
+    "https://book24.ru/knigi/fentezi/": "🧙 Фэнтези",
+    "https://book24.ru/knigi/romany/": "❤️ Романы",
+    "https://book24.ru/knigi/fantastika/": "🚀 Фантастика",
+    "https://book24.ru/knigi/psikhologiya/": "🧠 Психология",
+    "https://book24.ru/knigi/biznes-literatura/": "📊 Бизнес",
+    "https://book24.ru/knigi/detskaya-literatura/": "👶 Детские",
+    "https://book24.ru/knigi/uchebnaya-literatura/": "🎓 Учебники"
 }
 
 def clean_price(price_str):
-@@ -55,390 +47,242 @@
-def parse_page(driver, page_num):
+    if not price_str:
+        return None
+    match = re.search(r'(\d[\d\s]*)', price_str)
+    if match:
+        return int(re.sub(r'\s', '', match.group(1)))
+    return None
+
+def parse_page(driver, page_num, log_func):
     books = []
     try:
-        WebDriverWait(driver, 8).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]'))
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '.product-card, .catalog-card'))
         )
     except Exception as e:
-        print(f"⚠️ Страница {page_num}: не дождались карточек – {e}")
-        print(f"⚠️ Страница {page_num}: {e}")
+        log_func(f"⚠️ Страница {page_num}: {e}")
         return books
-    time.sleep(random.uniform(0.6, 1.2))
-    items = driver.find_elements(By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]')
-    print(f"📄 Страница {page_num}: найдено {len(items)} карточек")
     
-    items = driver.find_elements(By.CSS_SELECTOR, '.product-card, .catalog-card')
-    print(f"📄 Страница {page_num}: {len(items)} карточек")
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(random.uniform(0.5, 1))
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(random.uniform(0.5, 1))
+    
+    selectors = ['.product-card', '.catalog-card', '[data-product-id]', '.product-item', '.book-item', '.card-product', 'div[class*="product"]']
+    items = []
+    for selector in selectors:
+        found = driver.find_elements(By.CSS_SELECTOR, selector)
+        if found:
+            items = found
+            log_func(f"🔍 Нашёл карточки по: {selector} ({len(found)} шт)")
+            break
+    
+    if not items:
+        log_func(f"❌ Карточки не найдены! Сохраняю HTML...")
+        with open(f"debug_page_{page_num}.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source[:100000])
+        log_func(f"💾 debug_page_{page_num}.html сохранён")
+        return books
+    
+    log_func(f"📄 Страница {page_num}: найдено {len(items)} карточек")
     
     for item in items:
         try:
             title = ""
-            title_elem = item.find_element(By.CSS_SELECTOR, 'a[title], .product-title, .catalog-card__title, h3')
-            title = title_elem.text.strip()
+            title_selectors = ['a[title]', '.product-title', '.catalog-card__title', 'h3', 'a', '[class*="title"]']
+            for sel in title_selectors:
+                try:
+                    elem = item.find_element(By.CSS_SELECTOR, sel)
+                    title = elem.text.strip()
+                    if not title:
+                        title = elem.get_attribute('title') or ""
+                    if title:
+                        break
+                except:
+                    continue
             if not title:
-                title = title_elem.get_attribute('title') or ""
-
-            try:
-                title_elem = item.find_element(By.CSS_SELECTOR, 'a[title], .product-title')
-                title = title_elem.text.strip()
-                if not title:
-                    title = title_elem.get_attribute('title') or ""
-            except:
                 continue
             
             author = ""
-            try:
-                author_elem = item.find_element(By.CSS_SELECTOR, '.product-author, .catalog-card__author, [class*="author"]')
-                author_elem = item.find_element(By.CSS_SELECTOR, '.product-author')
-                author = author_elem.text.strip()
-            except:
-                pass
-
-            # --- ИСПРАВЛЕННЫЙ ПАРСИНГ ЦЕНЫ ---
+            author_selectors = ['.product-author', '.catalog-card__author', '[class*="author"]']
+            for sel in author_selectors:
+                try:
+                    elem = item.find_element(By.CSS_SELECTOR, sel)
+                    author = elem.text.strip()
+                    if author:
+                        break
+                except:
+                    pass
             
             price_raw = ""
-            try:
-                price_elem = item.find_element(By.CSS_SELECTOR, '.product-price, .catalog-card__price, [class*="price"]')
-                price_elem = item.find_element(By.CSS_SELECTOR, '.product-price')
-                price_raw = price_elem.text.strip().split('\n')[0]
-            except:
-                pass
-
-            
+            price_selectors = ['.product-price', '.catalog-card__price', '[class*="price"]', '.price', '[class*="Price"]']
+            for sel in price_selectors:
+                try:
+                    elem = item.find_element(By.CSS_SELECTOR, sel)
+                    price_raw = elem.text.strip().split('\n')[0]
+                    if price_raw:
+                        break
+                except:
+                    pass
             price_num = clean_price(price_raw)
-
             
             link = ""
             try:
@@ -111,7 +134,7 @@ def parse_page(driver, page_num):
                     link = 'https://book24.ru' + link
             except:
                 pass
-
+            
             books.append({
                 'Название': title,
                 'Автор': author,
@@ -119,20 +142,9 @@ def parse_page(driver, page_num):
                 'Цена (строка)': price_raw,
                 'Ссылка': link
             })
+            log_func(f"  ✅ {title[:40]} | {price_raw}")
         except Exception as e:
-            print(f"❌ Ошибка в карточке: {e}")
-            
-            if title:
-                books.append({
-                    'Название': title,
-                    'Автор': author,
-                    'Цена (число)': price_num,
-                    'Цена (строка)': price_raw,
-                    'Ссылка': link
-                })
-        except:
             continue
-    
     return books
 
 def run_parser_task(max_books, category_url):
@@ -146,122 +158,85 @@ def run_parser_task(max_books, category_url):
     shared_state['progress_total'] = max_books
     shared_state['message'] = ''
     shared_state['stats'] = None
-
+    
+    def log(msg):
+        print(msg)
+    
+    log(f"🚀 Старт парсинга: {max_books} книг")
+    log(f"🔗 URL: {category_url}")
+    
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
     driver = webdriver.Chrome(options=chrome_options)
-
-    page = 1
-    
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
-    driver = webdriver.Chrome(options=options)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     all_books = []
-    max_pages = 100
-
-    while page <= max_pages and len(all_books) < max_books and not shared_state['stop_flag']:
-        url = f"{category_url}?page={page}" if page > 1 else category_url
-        print(f"🌐 Загрузка страницы {page}...")
-        driver.get(url)
-        books_on_page = parse_page(driver, page)
-        if not books_on_page:
-            break
-        if len(all_books) + len(books_on_page) > max_books:
-            remaining = max_books - len(all_books)
-            all_books.extend(books_on_page[:remaining])
+    page = 1
     
-    try:
-        print(f"🌐 Загрузка: {category_url}")
-        driver.get(category_url)
-        time.sleep(3)
+    while page <= 5 and len(all_books) < max_books and not shared_state['stop_flag']:
+        url = f"{category_url}?page={page}" if page > 1 else category_url
+        log(f"🌐 Загрузка страницы {page}...")
+        driver.get(url)
+        time.sleep(random.uniform(2, 4))
         
-        books_on_page = parse_page(driver, 1)
+        books_on_page = parse_page(driver, page, log)
+        if not books_on_page:
+            log(f"⚠️ Страница {page} не содержит книг, останов")
+            break
         
-        if books_on_page:
-            max_books = min(max_books, len(books_on_page))
-            all_books = books_on_page[:max_books]
-            shared_state['books'] = all_books
-            shared_state['progress_current'] = len(all_books)
-            print(f"✅ Собрано {len(all_books)} книг")
-        else:
-            all_books.extend(books_on_page)
+        for book in books_on_page:
+            if len(all_books) < max_books:
+                all_books.append(book)
+        
         shared_state['books'] = all_books.copy()
         shared_state['progress_current'] = len(all_books)
-        if len(all_books) >= max_books:
-            break
+        log(f"📚 Всего собрано: {len(all_books)} книг")
+        
         page += 1
-        time.sleep(random.uniform(0.8, 1.5))
-
-            print("❌ Не найдено книг")
-            # Сохраняем HTML для отладки
-            with open("debug.html", "w", encoding="utf-8") as f:
-                f.write(driver.page_source[:100000])
-            print("💾 Сохранён debug.html")
-            
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        shared_state['message'] = str(e)
+        time.sleep(random.uniform(1, 2))
     
     driver.quit()
     elapsed = time.time() - start_time
-
-    prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)') is not None]
-    avg_price = sum(prices)/len(prices) if prices else 0
-    min_price = min(prices) if prices else 0
-    max_price_val = max(prices) if prices else 0
-    category_name = categories.get(category_url, category_url)
     
     prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)')]
+    category_name = categories.get(category_url, category_url)
+    
     shared_state['stats'] = {
         'count': len(all_books),
-        'avg_price': round(avg_price, 2),
-        'min_price': min_price,
-        'max_price': max_price_val,
-        'category': category_name,
-        'time': round(elapsed, 1)
         'avg_price': round(sum(prices)/len(prices), 2) if prices else 0,
         'min_price': min(prices) if prices else 0,
         'max_price': max(prices) if prices else 0,
-        'category': categories.get(category_url, ''),
-        'time': round(time.time() - start_time, 1)
+        'category': category_name,
+        'time': round(elapsed, 1)
     }
-    if shared_state['stop_flag']:
-        shared_state['message'] = f"⏹️ Парсинг остановлен. Собрано {len(all_books)} книг."
     
-    if len(all_books) == 0:
-        shared_state['message'] = "❌ Книги не найдены. Скачан debug.html для анализа"
+    if shared_state['stop_flag']:
+        shared_state['message'] = f"⏹️ Остановлено. Собрано {len(all_books)} книг"
+    elif len(all_books) == 0:
+        shared_state['message'] = f"❌ Книги не найдены. Проверьте debug_page_*.html"
     else:
-        shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
-        shared_state['message'] = f"✅ Собрано {len(all_books)} книг"
+        shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек"
     
     shared_state['running'] = False
+    log(shared_state['message'])
 
-# -------------------- HTML --------------------
-MAIN_TEMPLATE = r"""
-# --- HTML ---
-HTML = """
+# ---------- HTML-шаблон ----------
+HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
-<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📚 Парсер книг book24.ru | Timergalin Danil</title>
-    <title>📚 Парсер book24.ru</title>
     <style>
         * { box-sizing: border-box; }
         body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; transition: background 0.3s; }
@@ -283,10 +258,6 @@ HTML = """
         .owner-sign { position: fixed; bottom: 10px; right: 15px; background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 20px; font-size: 12px; color: #ffd966; font-family: monospace; backdrop-filter: blur(4px); z-index: 1000; pointer-events: none; }
         .controls { display: flex; gap: 20px; flex-wrap: wrap; background: #252634; padding: 15px; border-radius: 12px; margin-bottom: 20px; align-items: flex-end; justify-content: space-between; }
         .control-group { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
-        body { background: #1e1f2c; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; color: #eee; }
-        .container { max-width: 1200px; margin: auto; background: #2d2f3e; border-radius: 16px; padding: 20px; }
-        h1 { color: #ffd966; text-align: center; }
-        .controls { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
         label { font-weight: bold; color: #ffd966; }
         body.light-theme label { color: #0056b3; }
@@ -294,8 +265,6 @@ HTML = """
         body.light-theme input, body.light-theme select { background: #fff; color: #000; border: 1px solid #ccc; }
         button { background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; transition: 0.2s; margin: 5px; }
         button:hover { transform: scale(1.02); filter: brightness(1.05); }
-        input, select { background: #3c3f54; border: none; padding: 8px 12px; border-radius: 8px; color: white; }
-        button { background: #4caf50; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; }
         #stopBtn { background: #f44336; }
         #saveBtn { background: #2196f3; }
         .info-btn { background: #9c27b0; }
@@ -335,16 +304,6 @@ HTML = """
         .theme-switch { display: flex; gap: 15px; }
         .theme-switch button { flex: 1; background: #3c3f54; }
         .red-close-btn { background: #f44336; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; width: 100%; margin-top: 15px; }
-        .progress-fill { width: 0%; height: 25px; background: #4caf50; text-align: center; line-height: 25px; }
-        .log { background: #1e1f2c; color: #0f0; font-family: monospace; padding: 10px; height: 200px; overflow-y: auto; border-radius: 8px; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #3c3f54; padding: 8px; text-align: left; }
-        th { background: #3c3f54; color: #ffd966; }
-        td a { color: #66bb6a; }
-        .status { padding: 10px; border-radius: 8px; text-align: center; margin: 10px 0; }
-        .status.info { background: #0c5460; }
-        .status.success { background: #155724; }
-        .status.error { background: #721c24; }
     </style>
 </head>
 <body>
@@ -356,21 +315,21 @@ HTML = """
 
     <div class="controls">
         <div class="control-group">
-            <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" placeholder="введите число"></div>
+            <div class="form-group"><label>📖 Количество книг:</label><input type="number" id="bookCount" value="30" placeholder="введите число"></div>
             <div class="form-group"><label>🎭 Жанр:</label>
             <select id="category">
-                <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
-                <option value="https://book24.ru/knigi-novinki/">Новинки</option>
-                <option value="https://book24.ru/knigi-skoro-v-prodazhe/">Скоро в продаже</option>
-                <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
-                <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
-                <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
-                <option value="https://book24.ru/knigi/romany/">Романы</option>
-                <option value="https://book24.ru/knigi/fantastika/">Фантастика</option>
-                <option value="https://book24.ru/knigi/psikhologiya/">Психология</option>
-                <option value="https://book24.ru/knigi/biznes-literatura/">Бизнес-литература</option>
-                <option value="https://book24.ru/knigi/detskaya-literatura/">Детские книги</option>
-                <option value="https://book24.ru/knigi/uchebnaya-literatura/">Учебники</option>
+                <option value="https://book24.ru/knigi-bestsellery/">🔥 Бестселлеры</option>
+                <option value="https://book24.ru/knigi-novinki/">🆕 Новинки</option>
+                <option value="https://book24.ru/knigi-skoro-v-prodazhe/">⏳ Скоро в продаже</option>
+                <option value="https://book24.ru/knigi/klassicheskaya-literatura/">📖 Классика</option>
+                <option value="https://book24.ru/knigi/detektivy/">🕵️ Детективы</option>
+                <option value="https://book24.ru/knigi/fentezi/">🧙 Фэнтези</option>
+                <option value="https://book24.ru/knigi/romany/">❤️ Романы</option>
+                <option value="https://book24.ru/knigi/fantastika/">🚀 Фантастика</option>
+                <option value="https://book24.ru/knigi/psikhologiya/">🧠 Психология</option>
+                <option value="https://book24.ru/knigi/biznes-literatura/">📊 Бизнес</option>
+                <option value="https://book24.ru/knigi/detskaya-literatura/">👶 Детские</option>
+                <option value="https://book24.ru/knigi/uchebnaya-literatura/">🎓 Учебники</option>
             </select></div>
             <div>
                 <button id="startBtn">▶ СТАРТ</button>
@@ -426,24 +385,11 @@ HTML = """
         <div class="settings-group"><label>🎨 Тема:</label><div class="theme-switch"><button id="themeLightBtn">Светлая</button><button id="themeDarkBtn">Тёмная</button></div></div>
         <button id="openSupportBtn" class="info-btn" style="width:100%; margin-bottom:10px;">🛠️ Техподдержка</button>
         <button id="saveSettingsBtn" style="background:#4caf50; width:100%;">Сохранить</button>
-        <div class="form-group"><label>📖 Книг:</label><input type="number" id="bookCount" value="30"></div>
-        <div class="form-group"><label>🎭 Жанр:</label>
-        <select id="category">
-            <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
-            <option value="https://book24.ru/knigi-novinki/">Новинки</option>
-            <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
-            <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
-        </select></div>
-        <div><button id="startBtn">▶ СТАРТ</button><button id="stopBtn" disabled>⏹️ СТОП</button></div>
     </div>
-    <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
-    <div class="status info" id="statusDiv">Готов</div>
-    <div class="log" id="logDiv">📋 Лог:\n</div>
-    <div id="results"></div>
 </div>
 
 <div id="supportModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeSupport">&times;</span><h3>🛠️ Техподдержка</h3>
+    <div class="modal-content"><span class="close" id="closeSupport">&times;</span><h3>🛠️ Техническая поддержка</h3>
         <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></p>
         <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank">github.com/timergalin</a></p>
         <button id="supportCloseBtn" class="red-close-btn">Закрыть</button>
@@ -466,151 +412,154 @@ HTML = """
     const tableBody = document.getElementById('tableBody');
 
     function showToast(msg, isErr=false){ let t=document.createElement('div'); t.className='toast'; t.style.background=isErr?'#f44336':'#4caf50'; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>{ t.classList.add('fade-out'); setTimeout(()=>t.remove(),300); },2500); }
-    let interval = null;
-    const startBtn = document.getElementById('startBtn'), stopBtn = document.getElementById('stopBtn');
-    const progressFill = document.getElementById('progressFill'), statusDiv = document.getElementById('statusDiv');
-    const logDiv = document.getElementById('logDiv'), resultsDiv = document.getElementById('results');
-    
     function addLog(msg){ let p=document.createElement('div'); p.textContent=msg; logDiv.appendChild(p); logDiv.scrollTop=logDiv.scrollHeight; }
+    
     function setActiveTab(tab){
-        [tabParsingBtn,tabResultsBtn,tabStatsBtn].forEach(btn=>btn.classList.remove('active'));
-        [parsingTab,resultsTab,statsTab].forEach(t=>t.classList.remove('active'));
-        if(tab==='parsing'){ tabParsingBtn.classList.add('active'); parsingTab.classList.add('active'); }
-        else if(tab==='results'){ tabResultsBtn.classList.add('active'); resultsTab.classList.add('active'); updateTableDisplay(currentBooks); }
-        else if(tab==='stats'){ tabStatsBtn.classList.add('active'); statsTab.classList.add('active'); fetchStats(); }
-    }
-    tabParsingBtn.onclick=()=>setActiveTab('parsing');
-    tabResultsBtn.onclick=()=>setActiveTab('results');
-    tabStatsBtn.onclick=()=>setActiveTab('stats');
-    function fetchStats(){ fetch('/status').then(r=>r.json()).then(d=>{ if(d.stats){ let s=d.stats; statCount.innerText=s.count; statAvg.innerText=s.avg_price+' ₽'; statMin.innerText=s.min_price+' ₽'; statMax.innerText=s.max_price+' ₽'; statGenre.innerText=s.category; statTime.innerText=s.time+' сек'; } }); }
-    function updateTableDisplay(books){
-        tableBody.innerHTML='';
-        books.forEach((b,i)=>{ let r=tableBody.insertRow(); r.insertCell(0).innerText=i+1; r.insertCell(1).innerText=b['Название']||''; r.insertCell(2).innerText=b['Автор']||''; let price=b['Цена (строка)']||(b['Цена (число)']?b['Цена (число)']+' ₽':'—'); r.insertCell(3).innerText=price; let l=b['Ссылка']||''; let lc=r.insertCell(4); if(l){ let a=document.createElement('a'); a.href=l; a.target='_blank'; a.innerText='Открыть'; lc.appendChild(a); } else lc.innerText='—'; });
-        document.querySelectorAll('#resultsTable th').forEach(th=>{ th.onclick=()=>{ let col=th.cellIndex, isNum=th.getAttribute('data-sort')==='number'; let rows=Array.from(tableBody.rows); rows.sort((a,b)=>{ let av=a.cells[col].innerText, bv=b.cells[col].innerText; if(isNum){ av=parseFloat(av.replace(/[^\d.-]/g,''))||0; bv=parseFloat(bv.replace(/[^\d.-]/g,''))||0; } return av<bv?-1:av>bv?1:0; }); rows.forEach(r=>tableBody.appendChild(r)); }; });
+        tabParsingBtn.classList.remove('active');
+        tabResultsBtn.classList.remove('active');
+        tabStatsBtn.classList.remove('active');
+        parsingTab.classList.remove('active');
+        resultsTab.classList.remove('active');
+        statsTab.classList.remove('active');
+        if(tab === 'parsing'){ tabParsingBtn.classList.add('active'); parsingTab.classList.add('active'); }
+        else if(tab === 'results'){ tabResultsBtn.classList.add('active'); resultsTab.classList.add('active'); updateTableDisplay(currentBooks); }
+        else if(tab === 'stats'){ tabStatsBtn.classList.add('active'); statsTab.classList.add('active'); fetchStats(); }
     }
     
-    function checkStatus(){
-        fetch('/status').then(r=>r.json()).then(d=>{
-            if(d.running){
-                if(d.progress_current && d.progress_total){ let p=Math.round(d.progress_current/d.progress_total*100); progressFill.style.width=p+'%'; progressFill.innerText=p+'%'; }
-                if(d.books && d.books.length!==currentBooks.length){ currentBooks=d.books; if(resultsTab.classList.contains('active')) updateTableDisplay(currentBooks); }
-                statusDiv.innerText='⏳ Сбор данных...'; statusDiv.className='status info';
-                startBtn.disabled=true; stopBtn.disabled=false; saveBtn.disabled=true; exportCsvBtn.disabled=true;
-            }else{
-                if(updateInterval) clearInterval(updateInterval); updateInterval=null;
-                startBtn.disabled=false; stopBtn.disabled=true;
-                if(d.books && d.books.length>0){ currentBooks=d.books; if(resultsTab.classList.contains('active')) updateTableDisplay(currentBooks); saveBtn.disabled=false; exportCsvBtn.disabled=false; statusDiv.innerText=d.message||'Завершено'; statusDiv.className='status success'; }
-                else{ statusDiv.innerText=d.message||'Нет результатов'; statusDiv.className='status error'; saveBtn.disabled=true; exportCsvBtn.disabled=true; }
-                if(d.stats && statsTab.classList.contains('active')){ let s=d.stats; statCount.innerText=s.count; statAvg.innerText=s.avg_price+' ₽'; statMin.innerText=s.min_price+' ₽'; statMax.innerText=s.max_price+' ₽'; statGenre.innerText=s.category; statTime.innerText=s.time+' сек'; }
-                addLog(d.message||'Готово'); startBtn.classList.remove('animate-pulse');
-                if(d.progress_current && d.progress_total){
-                    let p = Math.round(d.progress_current/d.progress_total*100);
-                    progressFill.style.width = p+'%'; progressFill.innerText = p+'%';
-                }
-                statusDiv.innerText = '⏳ Сбор данных...'; statusDiv.className = 'status info';
-                startBtn.disabled = true; stopBtn.disabled = false;
-            } else {
-                if(interval) clearInterval(interval); interval = null;
-                startBtn.disabled = false; stopBtn.disabled = true;
-                if(d.books && d.books.length > 0){
-                    statusDiv.innerText = d.message; statusDiv.className = 'status success';
-                    let html = '<table><thead><tr><th>№</th><th>Название</th><th>Автор</th><th>Цена</th><th>Ссылка</th></tr></thead><tbody>';
-                    d.books.forEach((b,i)=>{ html += `<tr><td>${i+1}</td><td>${b['Название']||''}</td><td>${b['Автор']||''}</td><td>${b['Цена (строка)']||'—'}</td><td>${b['Ссылка']?`<a href="${b['Ссылка']}" target="_blank">Открыть</a>`:'—'}</td></tr>`; });
-                    html += '</tbody></table>';
-                    resultsDiv.innerHTML = html;
-                } else {
-                    statusDiv.innerText = d.message || 'Нет результатов'; statusDiv.className = 'status error';
-                }
-                addLog(d.message || 'Готово');
+    tabParsingBtn.onclick = () => setActiveTab('parsing');
+    tabResultsBtn.onclick = () => setActiveTab('results');
+    tabStatsBtn.onclick = () => setActiveTab('stats');
+    
+    function fetchStats(){
+        fetch('/status').then(r=>r.json()).then(data=>{
+            if(data.stats){
+                let s = data.stats;
+                statCount.innerText = s.count;
+                statAvg.innerText = s.avg_price + ' ₽';
+                statMin.innerText = s.min_price + ' ₽';
+                statMax.innerText = s.max_price + ' ₽';
+                statGenre.innerText = s.category;
+                statTime.innerText = s.time + ' сек';
             }
         });
     }
-    startBtn.onclick=()=>{
-        let maxBooks=parseInt(bookCountInput.value);
-        if(isNaN(maxBooks) || maxBooks<=0){ showToast('❌ Введите количество книг (целое >0)',true); return; }
-        fetch('/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_books:maxBooks, category_url:document.getElementById('category').value})})
-        .then(r=>r.json()).then(d=>{ if(d.status==='started'){ addLog('🚀 Парсинг запущен...'); showToast('Парсинг запущен'); progressFill.style.width='0%'; progressFill.innerText='0%'; currentBooks=[]; if(resultsTab.classList.contains('active')) updateTableDisplay([]); if(updateInterval) clearInterval(updateInterval); updateInterval=setInterval(checkStatus,1000); startBtn.classList.add('animate-pulse'); } else showToast('❌ '+d.message,true); });
+    
+    function updateTableDisplay(books){
+        tableBody.innerHTML = '';
+        books.forEach((book, idx) => {
+            let row = tableBody.insertRow();
+            row.insertCell(0).innerText = idx + 1;
+            row.insertCell(1).innerText = book['Название'] || '';
+            row.insertCell(2).innerText = book['Автор'] || '';
+            let price = book['Цена (строка)'] || (book['Цена (число)'] ? book['Цена (число)'] + ' ₽' : '—');
+            row.insertCell(3).innerText = price;
+            let link = book['Ссылка'] || '';
+            let linkCell = row.insertCell(4);
+            if(link){
+                let a = document.createElement('a');
+                a.href = link;
+                a.target = '_blank';
+                a.innerText = 'Открыть';
+                linkCell.appendChild(a);
+            } else {
+                linkCell.innerText = '—';
+            }
+        });
+        
+        document.querySelectorAll('#resultsTable th').forEach(th => {
+            th.onclick = () => {
+                let col = th.cellIndex;
+                let isNum = th.getAttribute('data-sort') === 'number';
+                let rows = Array.from(tableBody.rows);
+                rows.sort((a, b) => {
+                    let aVal = a.cells[col].innerText;
+                    let bVal = b.cells[col].innerText;
+                    if(isNum){
+                        aVal = parseFloat(aVal.replace(/[^\d.-]/g, '')) || 0;
+                        bVal = parseFloat(bVal.replace(/[^\d.-]/g, '')) || 0;
+                    }
+                    return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                });
+                rows.forEach(row => tableBody.appendChild(row));
+            };
+        });
+    }
+    
+    function checkStatus(){
+        fetch('/status').then(r=>r.json()).then(data=>{
+            if(data.running){
+                if(data.progress_current && data.progress_total){
+                    let percent = Math.round((data.progress_current / data.progress_total) * 100);
+                    progressFill.style.width = percent + '%';
+                    progressFill.innerText = percent + '%';
+                }
+                if(data.books && data.books.length !== currentBooks.length){
+                    currentBooks = data.books;
+                    if(resultsTab.classList.contains('active')) updateTableDisplay(currentBooks);
+                    document.querySelector('.table-wrapper').classList.add('flash-bg');
+                    setTimeout(() => document.querySelector('.table-wrapper').classList.remove('flash-bg'), 300);
+                }
+                statusDiv.innerText = '⏳ Сбор данных...';
+                statusDiv.className = 'status info';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                saveBtn.disabled = true;
+                exportCsvBtn.disabled = true;
+            } else {
+                if(updateInterval) clearInterval(updateInterval);
+                updateInterval = null;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                if(data.books && data.books.length > 0){
+                    currentBooks = data.books;
+                    if(resultsTab.classList.contains('active')) updateTableDisplay(currentBooks);
+                    saveBtn.disabled = false;
+                    exportCsvBtn.disabled = false;
+                    statusDiv.innerText = data.message || 'Завершено';
+                    statusDiv.className = 'status success';
+                } else {
+                    statusDiv.innerText = data.message || 'Нет результатов';
+                    statusDiv.className = 'status error';
+                    saveBtn.disabled = true;
+                    exportCsvBtn.disabled = true;
+                }
+                if(data.stats && statsTab.classList.contains('active')){
+                    let s = data.stats;
+                    statCount.innerText = s.count;
+                    statAvg.innerText = s.avg_price + ' ₽';
+                    statMin.innerText = s.min_price + ' ₽';
+                    statMax.innerText = s.max_price + ' ₽';
+                    statGenre.innerText = s.category;
+                    statTime.innerText = s.time + ' сек';
+                }
+                addLog(data.message || 'Готово');
+                startBtn.classList.remove('animate-pulse');
+            }
+        });
+    }
     
     startBtn.onclick = () => {
-        let maxBooks = parseInt(document.getElementById('bookCount').value);
-        let categoryUrl = document.getElementById('category').value;
-        fetch('/start', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({max_books:maxBooks, category_url:categoryUrl}) })
-        .then(r=>r.json()).then(d=>{ if(d.status==='started'){ addLog('🚀 Старт'); progressFill.style.width='0%'; resultsDiv.innerHTML=''; if(interval) clearInterval(interval); interval = setInterval(checkStatus, 1000); } else addLog('❌ '+d.message); });
-    };
-    stopBtn.onclick=()=>{ fetch('/stop',{method:'POST'}).then(()=>{ addLog('⏸️ Остановка'); showToast('Парсинг остановлен'); stopBtn.disabled=true; startBtn.classList.remove('animate-pulse'); }); };
-    saveBtn.onclick=()=>{ window.location.href='/download-csv'; };
-    exportCsvBtn.onclick=()=>{ window.location.href='/download-csv'; };
-    aboutBtn.onclick=()=>{ aboutModal.style.display='block'; };
-    siteBtn.onclick=()=>{ window.open('https://book24.ru','_blank'); };
-    settingsBtn.onclick=()=>{ settingsModal.style.display='block'; };
-    openSupportBtn.onclick=()=>{ settingsModal.style.display='none'; supportModal.style.display='block'; };
-    closeAbout.onclick=closeAbout2=()=>{ aboutModal.style.display='none'; };
-    aboutCloseBtn.onclick=()=>{ aboutModal.style.display='none'; };
-    closeSettings.onclick=()=>{ settingsModal.style.display='none'; };
-    closeSupport.onclick=()=>{ supportModal.style.display='none'; };
-    supportCloseBtn.onclick=()=>{ supportModal.style.display='none'; };
-    window.onclick=e=>{ if(e.target==aboutModal) aboutModal.style.display='none'; if(e.target==settingsModal) settingsModal.style.display='none'; if(e.target==supportModal) supportModal.style.display='none'; };
-    function loadSettings(){ let def=localStorage.getItem('defaultBookCount'); if(def && def!==''){ defaultBookCountInput.value=def; bookCountInput.value=def; } else{ defaultBookCountInput.value=''; bookCountInput.value=''; } let theme=localStorage.getItem('theme'); if(theme==='light') document.body.classList.add('light-theme'); else document.body.classList.remove('light-theme'); }
-    function saveSettings(){ let def=defaultBookCountInput.value.trim(); if(def===''){ localStorage.removeItem('defaultBookCount'); bookCountInput.value=''; }else{ let num=parseInt(def); if(!isNaN(num) && num>0){ localStorage.setItem('defaultBookCount',num); bookCountInput.value=num; }else{ showToast('Введите положительное число',true); return; } } localStorage.setItem('theme',document.body.classList.contains('light-theme')?'light':'dark'); settingsModal.style.display='none'; showToast('Настройки сохранены'); }
-    themeLightBtn.onclick=()=>{ document.body.classList.add('light-theme'); localStorage.setItem('theme','light'); };
-    themeDarkBtn.onclick=()=>{ document.body.classList.remove('light-theme'); localStorage.setItem('theme','dark'); };
-    saveSettingsBtn.onclick=saveSettings;
-    loadSettings();
-    stopBtn.onclick = () => { fetch('/stop',{method:'POST'}).then(()=>{ addLog('⏸️ Стоп'); stopBtn.disabled=true; }); };
-</script>
-</body>
-</html>
-"""
-
-@app.route('/')
-def index():
-    return render_template_string(MAIN_TEMPLATE)
-    return render_template_string(HTML)
-
-@app.route('/start', methods=['POST'])
-def start():
-    global shared_state
-    if shared_state['running']:
-        return jsonify({'status': 'error', 'message': 'Парсинг уже запущен'})
-        return jsonify({'status': 'error', 'message': 'Уже запущено'})
-    data = request.get_json()
-    max_books = data.get('max_books')
-    if not max_books or max_books <= 0:
-        return jsonify({'status': 'error', 'message': 'Введите корректное количество книг'})
-    max_books = data.get('max_books', 30)
-    category_url = data.get('category_url')
-    if not category_url:
-        return jsonify({'status': 'error', 'message': 'Не указана категория'})
-    thread = threading.Thread(target=run_parser_task, args=(max_books, category_url))
-    thread.start()
-        return jsonify({'status': 'error', 'message': 'Нет категории'})
-    shared_state['stop_flag'] = False
-    threading.Thread(target=run_parser_task, args=(max_books, category_url)).start()
-    return jsonify({'status': 'started'})
-
-@app.route('/stop', methods=['POST'])
-@@ -461,20 +305,14 @@
-def download_csv():
-    books = shared_state.get('books', [])
-    if not books:
-        return "Нет данных для сохранения", 404
-        return "Нет данных", 404
-    output = io.StringIO()
-    fieldnames = ['Название', 'Автор', 'Цена (число)', 'Цена (строка)', 'Ссылка']
-    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=';')
-    writer = csv.DictWriter(output, fieldnames=['Название','Автор','Цена (строка)','Ссылка'], delimiter=';')
-    writer.writeheader()
-    writer.writerows(books)
-    output.seek(0)
-    return send_file(
-        io.BytesIO(output.getvalue().encode('utf-8-sig')),
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name=f'books_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    )
-    return send_file(io.BytesIO(output.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=f'books_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv')
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-    app.run(host='0.0.0.0', port=port)
+        let maxBooks = parseInt(bookCountInput.value);
+        if(isNaN(maxBooks) || maxBooks <= 0){
+            showToast('❌ Введите количество книг (целое >0)', true);
+            return;
+        }
+        fetch('/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                max_books: maxBooks,
+                category_url: document.getElementById('category').value
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if(data.status === 'started'){
+                addLog('🚀 Парсинг запущен...');
+                showToast('Парсинг запущен');
+                progressFill.style.width = '0%';
+                progressFill.innerText = '0%';
+                currentBooks = [];
+                if(resultsTab.classList.contains('active')) updateTableDisplay([]);
+                if(updateInterval) clearInterval(updateInterval);
+                updateInterval =
