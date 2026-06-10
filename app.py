@@ -16,47 +16,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-Skip to content
-Danilizmo
-book-parser
-Repository navigation
-Code
-Issues
-Pull requests
-Actions
-Projects
-Wiki
-Security and quality
-Insights
-Settings
-Commit 96f164a
-Danilizmo
-Danilizmo
-authored
-1 hour ago
-Verified
-Update app.py
-main
-1 parent 
-1f3d0bc
- commit 
-96f164a
-1 file changed
-
-+377
--144
-Lines changed: 377 additions & 144 deletions
-File tree
-Filter files…
-app.py
-Search within code
- 
-‎app.py‎
-+377
--144
-Lines changed: 377 additions & 144 deletions
-Original file line number	Diff line number	Diff line change
-@@ -19,6 +19,7 @@
 app = Flask(__name__)
 CORS(app)
 
@@ -447,6 +406,7 @@ HTML_TEMPLATE = r"""
     <div class="settings-top"><button id="settingsBtn">⚙️</button></div>
     <h1>📚 Парсер книг book24.ru</h1>
     <div class="quote">✨ «Читайте больше, живите ярче!» ✨</div>
+
     <div class="controls">
         <div class="form-group"><label>📖 Книг:</label><input type="number" id="bookCount" value="30"></div>
         <div class="form-group"><label>🎭 Жанр:</label>
@@ -483,16 +443,19 @@ HTML_TEMPLATE = r"""
             </div>
         </div>
     </div>
+
     <div class="tabs">
         <button id="tabParsingBtn" class="tab-btn active">📡 Парсинг</button>
         <button id="tabResultsBtn" class="tab-btn">📊 Результаты</button>
         <button id="tabStatsBtn" class="tab-btn">📈 Статистика</button>
     </div>
+
     <div id="parsingTab" class="tab-content active">
         <div class="progress-bar"><div class="progress-fill" id="progressFill">0%</div></div>
         <div class="status info" id="statusDiv">Готов к работе</div>
         <div class="log" id="logDiv">📋 Лог парсинга:\n</div>
     </div>
+
     <div id="resultsTab" class="tab-content">
         <div class="table-wrapper">
             <table id="resultsTable">
@@ -502,6 +465,7 @@ HTML_TEMPLATE = r"""
         </div>
         <div style="margin-top:15px; text-align:right;"><button id="exportCsvBtn" disabled>💾 Экспорт в CSV</button></div>
     </div>
+
     <div id="statsTab" class="tab-content">
         <div class="stats-grid">
             <div class="stats-card"><div class="label">📚 Всего книг</div><div class="value" id="statCount">0</div></div>
@@ -513,9 +477,11 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 </div>
+
 <div id="aboutModal" class="modal">
     <div class="modal-content"><span class="close" id="closeAbout">&times;</span><h2>📖 О программе</h2><p><strong>Версия:</strong> 4.0</p><p><strong>Автор:</strong> Тимергалин Данил</p><p><strong>Описание:</strong> Парсер книг book24.ru.</p><p><strong>Технологии:</strong> Python, Flask, Selenium.</p><button id="aboutCloseBtn" class="red-close-btn">Закрыть</button></div>
 </div>
+
 <div id="settingsModal" class="modal">
     <div class="modal-content"><span class="close" id="closeSettings">&times;</span><h2>⚙️ Настройки</h2>
         <div class="settings-group"><label>📖 Количество книг по умолчанию:</label><input type="number" id="defaultBookCount" placeholder="оставьте пустым"></div>
@@ -524,6 +490,7 @@ HTML_TEMPLATE = r"""
         <button id="saveSettingsBtn" style="background:#4caf50; width:100%;">Сохранить</button>
     </div>
 </div>
+
 <div id="supportModal" class="modal">
     <div class="modal-content"><span class="close" id="closeSupport">&times;</span><h3>🛠️ Техническая поддержка</h3>
         <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></p>
@@ -535,6 +502,7 @@ HTML_TEMPLATE = r"""
     <div class="log" id="logDiv">📋 Лог:\n</div>
     <div id="results"></div>
 </div>
+
 <script>
     let interval = null;
     const startBtn = document.getElementById('startBtn'), stopBtn = document.getElementById('stopBtn');
@@ -554,6 +522,7 @@ HTML_TEMPLATE = r"""
     const themeLightBtn = document.getElementById('themeLightBtn'), themeDarkBtn = document.getElementById('themeDarkBtn'), saveSettingsBtn = document.getElementById('saveSettingsBtn');
     const statCount = document.getElementById('statCount'), statAvg = document.getElementById('statAvg'), statMin = document.getElementById('statMin'), statMax = document.getElementById('statMax'), statGenre = document.getElementById('statGenre'), statTime = document.getElementById('statTime');
     const tableBody = document.getElementById('tableBody');
+
     function showToast(msg, isErr=false){ let t=document.createElement('div'); t.className='toast'; t.style.background=isErr?'#f44336':'#4caf50'; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>{ t.classList.add('fade-out'); setTimeout(()=>t.remove(),300); },2500); }
     function addLog(msg){ let p=document.createElement('div'); p.textContent=msg; logDiv.appendChild(p); logDiv.scrollTop=logDiv.scrollHeight; }
     
@@ -691,11 +660,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
     app.run(host='0.0.0.0', port=port, debug=False)
-0 commit comments
-Comments
-0
- (0)
-Comment
-You're not receiving notifications from this thread.
-
-There are no files selected for viewing
