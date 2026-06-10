@@ -15,11 +15,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
 
 app = Flask(__name__)
 CORS(app)
 
+# ---------- Глобальное состояние ----------
 shared_state = {
     'running': False,
     'books': [],
@@ -30,9 +30,13 @@ shared_state = {
     'stop_flag': False
 }
 
+# Для отслеживания текущего потока парсинга
+current_thread = None
+
 categories = {
     "https://book24.ru/knigi-bestsellery/": "Бестселлеры",
     "https://book24.ru/knigi-novinki/": "Новинки",
+    "https://book24.ru/knigi-skoro-v-prodazhe/": "Скоро в продаже",
     "https://book24.ru/knigi/klassicheskaya-literatura/": "Классика",
     "https://book24.ru/knigi/detektivy/": "Детективы",
     "https://book24.ru/knigi/fentezi/": "Фэнтези",
@@ -44,12 +48,10 @@ categories = {
     "https://book24.ru/knigi/uchebnaya-literatura/": "Учебники"
 }
 
-# Список разных User-Agent для ротации
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
 ]
 
 def clean_price(price_str):
@@ -60,26 +62,24 @@ def clean_price(price_str):
         return int(re.sub(r'\s', '', match.group(1)))
     return None
 
-def parse_page(driver, page_num, log_callback):
+def parse_page(driver, page_num, log_func):
     books = []
     try:
-        # Ждём появления карточек с увеличенным таймаутом
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]'))
         )
     except Exception as e:
-        log_callback(f"⚠️ Страница {page_num}: не дождались карточек – {e}")
+        log_func(f"⚠️ Страница {page_num}: не дождались карточек – {e}")
         return books
-
-    # Прокручиваем страницу, чтобы подгрузился весь контент
+    
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(random.uniform(1, 2))
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(random.uniform(0.5, 1))
-
+    
     items = driver.find_elements(By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]')
-    log_callback(f"📄 Страница {page_num}: найдено {len(items)} карточек")
-
+    log_func(f"📄 Страница {page_num}: найдено {len(items)} карточек")
+    
     for item in items:
         try:
             title = ""
@@ -87,23 +87,23 @@ def parse_page(driver, page_num, log_callback):
             title = title_elem.text.strip()
             if not title:
                 title = title_elem.get_attribute('title') or ""
-
+            
             author = ""
             try:
                 author_elem = item.find_element(By.CSS_SELECTOR, '.product-author, .catalog-card__author, [class*="author"]')
                 author = author_elem.text.strip()
             except:
                 pass
-
+            
             price_raw = ""
             try:
                 price_elem = item.find_element(By.CSS_SELECTOR, '.product-price, .catalog-card__price, [class*="price"]')
                 price_raw = price_elem.text.strip().split('\n')[0]
             except:
                 pass
-
+            
             price_num = clean_price(price_raw)
-
+            
             link = ""
             try:
                 link_elem = item.find_element(By.CSS_SELECTOR, 'a')
@@ -112,7 +112,7 @@ def parse_page(driver, page_num, log_callback):
                     link = 'https://book24.ru' + link
             except:
                 pass
-
+            
             books.append({
                 'Название': title,
                 'Автор': author,
@@ -121,12 +121,14 @@ def parse_page(driver, page_num, log_callback):
                 'Ссылка': link
             })
         except Exception as e:
-            log_callback(f"❌ Ошибка в карточке: {e}")
+            log_func(f"❌ Ошибка в карточке: {e}")
     return books
 
 def run_parser_task(max_books, category_url):
-    global shared_state
+    global shared_state, current_thread
     start_time = time.time()
+    
+    # Сброс состояния перед запуском
     shared_state['running'] = True
     shared_state['stop_flag'] = False
     shared_state['books'] = []
@@ -134,57 +136,45 @@ def run_parser_task(max_books, category_url):
     shared_state['progress_total'] = max_books
     shared_state['message'] = ''
     shared_state['stats'] = None
-
-    # Функция для логирования в общее состояние
+    
     def log(msg):
         print(msg)
-        # Не сохраняем в shared_state, так как там нет поля log
-
+    
+    log(f"🚀 Старт парсинга: {max_books} книг")
+    
     chrome_options = Options()
-    # Временно отключаем headless для стабильности (можно вернуть после тестов)
-    # chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    
-    # Случайный User-Agent
     chrome_options.add_argument(f"--user-agent={random.choice(USER_AGENTS)}")
-    
-    # Дополнительные опции для обхода блокировок
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-
+    
     driver = webdriver.Chrome(options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
+    
     page = 1
     all_books = []
-    max_pages = 100
-
+    max_pages = 50
+    
     while page <= max_pages and len(all_books) < max_books and not shared_state['stop_flag']:
         url = f"{category_url}?page={page}" if page > 1 else category_url
         log(f"🌐 Загрузка страницы {page}...")
         driver.get(url)
-        
-        # Случайная задержка перед парсингом
         time.sleep(random.uniform(2, 4))
         
         books_on_page = parse_page(driver, page, log)
         if not books_on_page:
-            log(f"⚠️ Страница {page} не содержит товаров (или не загрузилась).")
-            # Если на первой странице нет товаров – выходим
-            if page == 1:
-                break
-            else:
-                # Возможно, конец списка
-                break
+            log(f"⚠️ Страница {page} пуста, завершаем")
+            break
         
         if len(all_books) + len(books_on_page) > max_books:
             remaining = max_books - len(all_books)
             all_books.extend(books_on_page[:remaining])
-            log(f"✅ Добавлено {remaining} книг, достигнут лимит")
+            log(f"✅ Добавлено {remaining} книг (лимит {max_books})")
         else:
             all_books.extend(books_on_page)
             log(f"📚 Добавлено {len(books_on_page)} книг (всего {len(all_books)})")
@@ -196,17 +186,17 @@ def run_parser_task(max_books, category_url):
             break
         
         page += 1
-        # Случайная задержка между страницами (2-5 секунд)
         time.sleep(random.uniform(2, 5))
-
+    
     driver.quit()
     elapsed = time.time() - start_time
-
+    
     prices = [b['Цена (число)'] for b in all_books if b.get('Цена (число)') is not None]
     avg_price = sum(prices)/len(prices) if prices else 0
     min_price = min(prices) if prices else 0
     max_price_val = max(prices) if prices else 0
     category_name = categories.get(category_url, category_url)
+    
     shared_state['stats'] = {
         'count': len(all_books),
         'avg_price': round(avg_price, 2),
@@ -215,13 +205,16 @@ def run_parser_task(max_books, category_url):
         'category': category_name,
         'time': round(elapsed, 1)
     }
+    
     if shared_state['stop_flag']:
         shared_state['message'] = f"⏹️ Парсинг остановлен. Собрано {len(all_books)} книг."
     else:
         shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
+    
     shared_state['running'] = False
+    current_thread = None
 
-# -------------------- HTML-шаблон (полный, без изменений) --------------------
+# -------------------- HTML-ШАБЛОН --------------------
 MAIN_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
@@ -367,7 +360,7 @@ MAIN_TEMPLATE = r"""
 </div>
 
 <div id="aboutModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeAbout">&times;</span><h2>📖 О программе</h2><p><strong>Версия:</strong> 4.0</p><p><strong>Автор:</strong> Тимергалин Данил</p><p><strong>Описание:</strong> Парсер книг book24.ru.</p><p><strong>Технологии:</strong> Python, Flask, Selenium.</p><button id="aboutCloseBtn" class="red-close-btn">Закрыть</button></div>
+    <div class="modal-content"><span class="close" id="closeAbout">&times;</span><h2>📖 О программе</h2><p><strong>Версия:</strong> 4.1</p><p><strong>Автор:</strong> Тимергалин Данил</p><p><strong>Описание:</strong> Парсер книг book24.ru.</p><p><strong>Технологии:</strong> Python, Flask, Selenium.</p><button id="aboutCloseBtn" class="red-close-btn">Закрыть</button></div>
 </div>
 
 <div id="settingsModal" class="modal">
@@ -467,27 +460,36 @@ MAIN_TEMPLATE = r"""
 </html>
 """
 
+# -------------------- Flask Маршруты --------------------
 @app.route('/')
 def index():
     return render_template_string(MAIN_TEMPLATE)
 
 @app.route('/start', methods=['POST'])
 def start():
+    global shared_state, current_thread
     if shared_state['running']:
         return jsonify({'status': 'error', 'message': 'Парсинг уже запущен'})
+    
     data = request.get_json()
     max_books = data.get('max_books')
     if not max_books or max_books <= 0:
         return jsonify({'status': 'error', 'message': 'Введите корректное количество книг'})
+    
     category_url = data.get('category_url')
     if not category_url:
         return jsonify({'status': 'error', 'message': 'Не указана категория'})
-    thread = threading.Thread(target=run_parser_task, args=(max_books, category_url))
-    thread.start()
+    
+    # Сброс флага остановки перед запуском
+    shared_state['stop_flag'] = False
+    
+    current_thread = threading.Thread(target=run_parser_task, args=(max_books, category_url))
+    current_thread.start()
     return jsonify({'status': 'started'})
 
 @app.route('/stop', methods=['POST'])
 def stop():
+    global shared_state
     shared_state['stop_flag'] = True
     return jsonify({'status': 'stopped'})
 
