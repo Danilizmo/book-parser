@@ -15,11 +15,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 
 app = Flask(__name__)
 CORS(app)
 
-# ---------- Глобальное состояние ----------
 shared_state = {
     'running': False,
     'books': [],
@@ -33,7 +33,6 @@ shared_state = {
 categories = {
     "https://book24.ru/knigi-bestsellery/": "Бестселлеры",
     "https://book24.ru/knigi-novinki/": "Новинки",
-    "https://book24.ru/knigi-skoro-v-prodazhe/": "Скоро в продаже",
     "https://book24.ru/knigi/klassicheskaya-literatura/": "Классика",
     "https://book24.ru/knigi/detektivy/": "Детективы",
     "https://book24.ru/knigi/fentezi/": "Фэнтези",
@@ -45,7 +44,14 @@ categories = {
     "https://book24.ru/knigi/uchebnaya-literatura/": "Учебники"
 }
 
-# ---------- Функции парсинга ----------
+# Список разных User-Agent для ротации
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
+
 def clean_price(price_str):
     if not price_str:
         return None
@@ -54,18 +60,26 @@ def clean_price(price_str):
         return int(re.sub(r'\s', '', match.group(1)))
     return None
 
-def parse_page(driver, page_num):
+def parse_page(driver, page_num, log_callback):
     books = []
     try:
-        WebDriverWait(driver, 8).until(
+        # Ждём появления карточек с увеличенным таймаутом
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]'))
         )
     except Exception as e:
-        print(f"⚠️ Страница {page_num}: не дождались карточек – {e}")
+        log_callback(f"⚠️ Страница {page_num}: не дождались карточек – {e}")
         return books
-    time.sleep(random.uniform(0.6, 1.2))
+
+    # Прокручиваем страницу, чтобы подгрузился весь контент
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(random.uniform(1, 2))
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(random.uniform(0.5, 1))
+
     items = driver.find_elements(By.CSS_SELECTOR, '.product-card, .catalog-card, [data-product-id]')
-    print(f"📄 Страница {page_num}: найдено {len(items)} карточек")
+    log_callback(f"📄 Страница {page_num}: найдено {len(items)} карточек")
+
     for item in items:
         try:
             title = ""
@@ -81,10 +95,8 @@ def parse_page(driver, page_num):
             except:
                 pass
 
-            # ----- ИСПРАВЛЕННЫЙ ПОИСК ЦЕНЫ -----
             price_raw = ""
             try:
-                # Пробуем стандартный селектор цены
                 price_elem = item.find_element(By.CSS_SELECTOR, '.product-price, .catalog-card__price, [class*="price"]')
                 price_raw = price_elem.text.strip().split('\n')[0]
             except:
@@ -109,7 +121,7 @@ def parse_page(driver, page_num):
                 'Ссылка': link
             })
         except Exception as e:
-            print(f"❌ Ошибка в карточке: {e}")
+            log_callback(f"❌ Ошибка в карточке: {e}")
     return books
 
 def run_parser_task(max_books, category_url):
@@ -123,15 +135,29 @@ def run_parser_task(max_books, category_url):
     shared_state['message'] = ''
     shared_state['stats'] = None
 
+    # Функция для логирования в общее состояние
+    def log(msg):
+        print(msg)
+        # Не сохраняем в shared_state, так как там нет поля log
+
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
+    # Временно отключаем headless для стабильности (можно вернуть после тестов)
+    # chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    # Случайный User-Agent
+    chrome_options.add_argument(f"--user-agent={random.choice(USER_AGENTS)}")
+    
+    # Дополнительные опции для обхода блокировок
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
 
     driver = webdriver.Chrome(options=chrome_options)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
     page = 1
     all_books = []
@@ -139,22 +165,39 @@ def run_parser_task(max_books, category_url):
 
     while page <= max_pages and len(all_books) < max_books and not shared_state['stop_flag']:
         url = f"{category_url}?page={page}" if page > 1 else category_url
-        print(f"🌐 Загрузка страницы {page}...")
+        log(f"🌐 Загрузка страницы {page}...")
         driver.get(url)
-        books_on_page = parse_page(driver, page)
+        
+        # Случайная задержка перед парсингом
+        time.sleep(random.uniform(2, 4))
+        
+        books_on_page = parse_page(driver, page, log)
         if not books_on_page:
-            break
+            log(f"⚠️ Страница {page} не содержит товаров (или не загрузилась).")
+            # Если на первой странице нет товаров – выходим
+            if page == 1:
+                break
+            else:
+                # Возможно, конец списка
+                break
+        
         if len(all_books) + len(books_on_page) > max_books:
             remaining = max_books - len(all_books)
             all_books.extend(books_on_page[:remaining])
+            log(f"✅ Добавлено {remaining} книг, достигнут лимит")
         else:
             all_books.extend(books_on_page)
+            log(f"📚 Добавлено {len(books_on_page)} книг (всего {len(all_books)})")
+        
         shared_state['books'] = all_books.copy()
         shared_state['progress_current'] = len(all_books)
+        
         if len(all_books) >= max_books:
             break
+        
         page += 1
-        time.sleep(random.uniform(0.8, 1.5))
+        # Случайная задержка между страницами (2-5 секунд)
+        time.sleep(random.uniform(2, 5))
 
     driver.quit()
     elapsed = time.time() - start_time
@@ -178,7 +221,7 @@ def run_parser_task(max_books, category_url):
         shared_state['message'] = f"✅ Готово! Собрано {len(all_books)} книг за {elapsed:.1f} сек."
     shared_state['running'] = False
 
-# ---------- HTML-шаблон (рабочий, с тёмной темой, без авто-подстановки количества) ----------
+# -------------------- HTML-шаблон (полный, без изменений) --------------------
 MAIN_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="ru">
@@ -269,7 +312,6 @@ MAIN_TEMPLATE = r"""
             <select id="category">
                 <option value="https://book24.ru/knigi-bestsellery/">Бестселлеры</option>
                 <option value="https://book24.ru/knigi-novinki/">Новинки</option>
-                <option value="https://book24.ru/knigi-skoro-v-prodazhe/">Скоро в продаже</option>
                 <option value="https://book24.ru/knigi/klassicheskaya-literatura/">Классика</option>
                 <option value="https://book24.ru/knigi/detektivy/">Детективы</option>
                 <option value="https://book24.ru/knigi/fentezi/">Фэнтези</option>
@@ -425,7 +467,6 @@ MAIN_TEMPLATE = r"""
 </html>
 """
 
-# ---------- Маршруты ----------
 @app.route('/')
 def index():
     return render_template_string(MAIN_TEMPLATE)
