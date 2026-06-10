@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 import os
 import csv
@@ -68,17 +69,7 @@ def parse_page(driver, page_num, log_func):
     driver.execute_script("window.scrollTo(0, 0);")
     time.sleep(random.uniform(0.5, 1))
     
-    selectors = [
-        '.product-card',
-        '.catalog-card', 
-        '[data-product-id]',
-        '.product-item',
-        '.book-item',
-        '.card-product',
-        'div[class*="product"]',
-        'div[class*="Product"]'
-    ]
-    
+    selectors = ['.product-card', '.catalog-card', '[data-product-id]', '.product-item', '.book-item']
     items = []
     for selector in selectors:
         found = driver.find_elements(By.CSS_SELECTOR, selector)
@@ -91,7 +82,6 @@ def parse_page(driver, page_num, log_func):
         log_func(f"❌ Карточки не найдены! Сохраняю HTML...")
         with open(f"debug_page_{page_num}.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source[:100000])
-        log_func(f"💾 debug_page_{page_num}.html сохранён")
         return books
     
     log_func(f"📄 Страница {page_num}: найдено {len(items)} карточек")
@@ -99,7 +89,7 @@ def parse_page(driver, page_num, log_func):
     for item in items:
         try:
             title = ""
-            title_selectors = ['a[title]', '.product-title', '.catalog-card__title', 'h3', 'a', '[class*="title"]']
+            title_selectors = ['a[title]', '.product-title', '.catalog-card__title', 'h3']
             for sel in title_selectors:
                 try:
                     elem = item.find_element(By.CSS_SELECTOR, sel)
@@ -110,10 +100,9 @@ def parse_page(driver, page_num, log_func):
                         break
                 except:
                     continue
-            
             if not title:
                 continue
-
+            
             author = ""
             author_selectors = ['.product-author', '.catalog-card__author', '[class*="author"]']
             for sel in author_selectors:
@@ -124,9 +113,9 @@ def parse_page(driver, page_num, log_func):
                         break
                 except:
                     pass
-
+            
             price_raw = ""
-            price_selectors = ['.product-price', '.catalog-card__price', '[class*="price"]', '.price', '[class*="Price"]']
+            price_selectors = ['.product-price', '.catalog-card__price', '[class*="price"]']
             for sel in price_selectors:
                 try:
                     elem = item.find_element(By.CSS_SELECTOR, sel)
@@ -136,7 +125,7 @@ def parse_page(driver, page_num, log_func):
                 except:
                     pass
             price_num = clean_price(price_raw)
-
+            
             link = ""
             try:
                 link_elem = item.find_element(By.CSS_SELECTOR, 'a')
@@ -145,7 +134,7 @@ def parse_page(driver, page_num, log_func):
                     link = 'https://book24.ru' + link
             except:
                 pass
-
+            
             books.append({
                 'Название': title,
                 'Автор': author,
@@ -183,12 +172,9 @@ def run_parser_task(max_books, category_url):
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     driver = webdriver.Chrome(options=chrome_options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     all_books = []
     page = 1
@@ -200,7 +186,6 @@ def run_parser_task(max_books, category_url):
         time.sleep(random.uniform(2, 4))
         
         books_on_page = parse_page(driver, page, log)
-        
         if not books_on_page:
             log(f"⚠️ Страница {page} не содержит книг, останов")
             break
@@ -242,7 +227,7 @@ def run_parser_task(max_books, category_url):
     log(shared_state['message'])
 
 # ---------- HTML-шаблон ----------
-HTML_TEMPLATE = r"""
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -368,7 +353,15 @@ HTML_TEMPLATE = r"""
     <div id="resultsTab" class="tab-content">
         <div class="table-wrapper">
             <table id="resultsTable">
-                <thead><tr><th data-sort="number">№</th><th>Название</th><th>Автор</th><th data-sort="number">Цена</th><th>Ссылка</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th data-sort="number">№</th>
+                        <th>Название</th>
+                        <th>Автор</th>
+                        <th data-sort="number">Цена</th>
+                        <th>Ссылка</th>
+                    </tr>
+                </thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
@@ -388,11 +381,21 @@ HTML_TEMPLATE = r"""
 </div>
 
 <div id="aboutModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeAbout">&times;</span><h2>📖 О программе</h2><p><strong>Версия:</strong> 4.0</p><p><strong>Автор:</strong> Тимергалин Данил</p><p><strong>Описание:</strong> Парсер книг book24.ru.</p><p><strong>Технологии:</strong> Python, Flask, Selenium.</p><button id="aboutCloseBtn" class="red-close-btn">Закрыть</button></div>
+    <div class="modal-content">
+        <span class="close" id="closeAbout">&times;</span>
+        <h2>📖 О программе</h2>
+        <p><strong>Версия:</strong> 4.0</p>
+        <p><strong>Автор:</strong> Тимергалин Данил</p>
+        <p><strong>Описание:</strong> Парсер книг book24.ru.</p>
+        <p><strong>Технологии:</strong> Python, Flask, Selenium.</p>
+        <button id="aboutCloseBtn" class="red-close-btn">Закрыть</button>
+    </div>
 </div>
 
 <div id="settingsModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeSettings">&times;</span><h2>⚙️ Настройки</h2>
+    <div class="modal-content">
+        <span class="close" id="closeSettings">&times;</span>
+        <h2>⚙️ Настройки</h2>
         <div class="settings-group"><label>📖 Количество книг по умолчанию:</label><input type="number" id="defaultBookCount" placeholder="оставьте пустым"></div>
         <div class="settings-group"><label>🎨 Тема:</label><div class="theme-switch"><button id="themeLightBtn">Светлая</button><button id="themeDarkBtn">Тёмная</button></div></div>
         <button id="openSupportBtn" class="info-btn" style="width:100%; margin-bottom:10px;">🛠️ Техподдержка</button>
@@ -401,7 +404,9 @@ HTML_TEMPLATE = r"""
 </div>
 
 <div id="supportModal" class="modal">
-    <div class="modal-content"><span class="close" id="closeSupport">&times;</span><h3>🛠️ Техническая поддержка</h3>
+    <div class="modal-content">
+        <span class="close" id="closeSupport">&times;</span>
+        <h3>🛠️ Техническая поддержка</h3>
         <p>📱 Telegram: <a href="https://t.me/timergalin" target="_blank">@timergalin</a></p>
         <p>💻 GitHub: <a href="https://github.com/timergalin" target="_blank">github.com/timergalin</a></p>
         <button id="supportCloseBtn" class="red-close-btn">Закрыть</button>
@@ -567,4 +572,146 @@ HTML_TEMPLATE = r"""
         .then(r => r.json())
         .then(data => {
             if(data.status === 'started'){
-                addLog('🚀 Парсинг запущен...
+                addLog('🚀 Парсинг запущен...');
+                showToast('Парсинг запущен');
+                progressFill.style.width = '0%';
+                progressFill.innerText = '0%';
+                currentBooks = [];
+                if(resultsTab.classList.contains('active')) updateTableDisplay([]);
+                if(updateInterval) clearInterval(updateInterval);
+                updateInterval = setInterval(checkStatus, 1000);
+                startBtn.classList.add('animate-pulse');
+            } else {
+                showToast('❌ ' + data.message, true);
+            }
+        });
+    };
+    
+    stopBtn.onclick = () => {
+        fetch('/stop', { method: 'POST' }).then(() => {
+            addLog('⏸️ Остановка');
+            showToast('Парсинг остановлен');
+            stopBtn.disabled = true;
+            startBtn.classList.remove('animate-pulse');
+        });
+    };
+    
+    saveBtn.onclick = () => { window.location.href = '/download-csv'; };
+    exportCsvBtn.onclick = () => { window.location.href = '/download-csv'; };
+    
+    aboutBtn.onclick = () => { aboutModal.style.display = 'block'; };
+    siteBtn.onclick = () => { window.open('https://book24.ru', '_blank'); };
+    settingsBtn.onclick = () => { settingsModal.style.display = 'block'; };
+    openSupportBtn.onclick = () => { settingsModal.style.display = 'none'; supportModal.style.display = 'block'; };
+    
+    closeAbout.onclick = () => { aboutModal.style.display = 'none'; };
+    aboutCloseBtn.onclick = () => { aboutModal.style.display = 'none'; };
+    closeSettings.onclick = () => { settingsModal.style.display = 'none'; };
+    closeSupport.onclick = () => { supportModal.style.display = 'none'; };
+    supportCloseBtn.onclick = () => { supportModal.style.display = 'none'; };
+    
+    window.onclick = (e) => {
+        if(e.target == aboutModal) aboutModal.style.display = 'none';
+        if(e.target == settingsModal) settingsModal.style.display = 'none';
+        if(e.target == supportModal) supportModal.style.display = 'none';
+    };
+    
+    function loadSettings(){
+        let def = localStorage.getItem('defaultBookCount');
+        if(def && def !== ''){
+            defaultBookCountInput.value = def;
+            bookCountInput.value = def;
+        } else {
+            defaultBookCountInput.value = '';
+            bookCountInput.value = '30';
+        }
+        let theme = localStorage.getItem('theme');
+        if(theme === 'light') document.body.classList.add('light-theme');
+        else document.body.classList.remove('light-theme');
+    }
+    
+    function saveSettings(){
+        let def = defaultBookCountInput.value.trim();
+        if(def === ''){
+            localStorage.removeItem('defaultBookCount');
+            bookCountInput.value = '30';
+        } else {
+            let num = parseInt(def);
+            if(!isNaN(num) && num > 0){
+                localStorage.setItem('defaultBookCount', num);
+                bookCountInput.value = num;
+            } else {
+                showToast('Введите положительное число', true);
+                return;
+            }
+        }
+        localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
+        settingsModal.style.display = 'none';
+        showToast('✅ Настройки сохранены');
+    }
+    
+    themeLightBtn.onclick = () => { document.body.classList.add('light-theme'); localStorage.setItem('theme', 'light'); };
+    themeDarkBtn.onclick = () => { document.body.classList.remove('light-theme'); localStorage.setItem('theme', 'dark'); };
+    saveSettingsBtn.onclick = saveSettings;
+    
+    loadSettings();
+</script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/start', methods=['POST'])
+def start():
+    global shared_state
+    if shared_state['running']:
+        return jsonify({'status': 'error', 'message': 'Парсинг уже запущен'})
+    data = request.get_json()
+    max_books = data.get('max_books', 30)
+    category_url = data.get('category_url')
+    if not category_url:
+        return jsonify({'status': 'error', 'message': 'Не указана категория'})
+    shared_state['stop_flag'] = False
+    threading.Thread(target=run_parser_task, args=(max_books, category_url)).start()
+    return jsonify({'status': 'started'})
+
+@app.route('/stop', methods=['POST'])
+def stop():
+    shared_state['stop_flag'] = True
+    return jsonify({'status': 'stopped'})
+
+@app.route('/status')
+def status():
+    return jsonify({
+        'running': shared_state['running'],
+        'books': shared_state['books'],
+        'progress_current': shared_state['progress_current'],
+        'progress_total': shared_state['progress_total'],
+        'stats': shared_state['stats'],
+        'message': shared_state['message']
+    })
+
+@app.route('/download-csv')
+def download_csv():
+    books = shared_state.get('books', [])
+    if not books:
+        return "Нет данных для сохранения", 404
+    output = io.StringIO()
+    fieldnames = ['Название', 'Автор', 'Цена (число)', 'Цена (строка)', 'Ссылка']
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=';')
+    writer.writeheader()
+    writer.writerows(books)
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8-sig')),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'books_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    )
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
